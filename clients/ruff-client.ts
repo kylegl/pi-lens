@@ -146,6 +146,86 @@ export class RuffClient {
   }
 
   /**
+   * Auto-fix linting issues (writes to disk)
+   */
+  fixFile(filePath: string): { success: boolean; changed: boolean; fixed: number; error?: string } {
+    if (!this.isAvailable()) return { success: false, changed: false, fixed: 0, error: "Ruff not available" };
+
+    const absolutePath = path.resolve(filePath);
+    if (!fs.existsSync(absolutePath)) return { success: false, changed: false, fixed: 0, error: "File not found" };
+
+    const content = fs.readFileSync(absolutePath, "utf-8");
+
+    try {
+      const beforeDiags = this.checkFile(filePath);
+      const fixableCount = beforeDiags.filter(d => d.fixable).length;
+
+      const result = spawnSync("ruff", [
+        "check",
+        "--fix",
+        absolutePath,
+      ], {
+        encoding: "utf-8",
+        timeout: 15000,
+        shell: true,
+      });
+
+      if (result.error) {
+        return { success: false, changed: false, fixed: 0, error: result.error.message };
+      }
+
+      const fixed = fs.readFileSync(absolutePath, "utf-8");
+      const changed = content !== fixed;
+
+      if (changed) {
+        this.log(`Fixed ${fixableCount} issue(s) in ${path.basename(filePath)}`);
+      }
+
+      return { success: true, changed, fixed: fixableCount };
+    } catch (err: any) {
+      return { success: false, changed: false, fixed: 0, error: err.message };
+    }
+  }
+
+  /**
+   * Format a Python file (writes to disk)
+   */
+  formatFile(filePath: string): { success: boolean; changed: boolean; error?: string } {
+    if (!this.isAvailable()) return { success: false, changed: false, error: "Ruff not available" };
+
+    const absolutePath = path.resolve(filePath);
+    if (!fs.existsSync(absolutePath)) return { success: false, changed: false, error: "File not found" };
+
+    const content = fs.readFileSync(absolutePath, "utf-8");
+
+    try {
+      const result = spawnSync("ruff", [
+        "format",
+        absolutePath,
+      ], {
+        encoding: "utf-8",
+        timeout: 10000,
+        shell: true,
+      });
+
+      if (result.error) {
+        return { success: false, changed: false, error: result.error.message };
+      }
+
+      const formatted = fs.readFileSync(absolutePath, "utf-8");
+      const changed = content !== formatted;
+
+      if (changed) {
+        this.log(`Formatted ${path.basename(filePath)}`);
+      }
+
+      return { success: true, changed };
+    } catch (err: any) {
+      return { success: false, changed: false, error: err.message };
+    }
+  }
+
+  /**
    * Format diagnostics for LLM consumption
    */
   formatDiagnostics(diags: RuffDiagnostic[]): string {

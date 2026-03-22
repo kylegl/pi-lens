@@ -229,10 +229,6 @@ export class BiomeClient {
       result += `  ... and ${diags.length - 15} more\n`;
     }
 
-    if (fixable.length > 0) {
-      result += `\n  Run /format to auto-fix ${fixable.length} issue(s)\n`;
-    }
-
     return result;
   }
 

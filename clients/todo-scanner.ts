@@ -22,14 +22,14 @@ export interface TodoItem {
 
 export interface TodoScanResult {
   items: TodoItem[];
-  byType: Map<string, TodoItem[];
+  byType: Map<string, TodoItem[]>;
   byFile: Map<string, TodoItem[]>;
 }
 
 // --- Scanner ---
 
 export class TodoScanner {
-  private readonly pattern = /(TODO|FIXME|HACK|XXX|NOTE|DEPRECATED|BUG)\s*[\(:]?\s*(.+)/gi;
+  private readonly pattern = /\b(TODO|FIXME|HACK|XXX|NOTE|DEPRECATED|BUG)\b\s*[\(:]?\s*(.+)/gi;
 
   /**
    * Scan a single file for TODOs

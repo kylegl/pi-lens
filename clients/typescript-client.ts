@@ -21,10 +21,59 @@ import type {
 // TypeScript file extensions
 const TS_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx"]);
 
+// Default compiler options when no tsconfig is found
+const DEFAULT_COMPILER_OPTIONS: ts.CompilerOptions = {
+  target: ts.ScriptTarget.ES2020,
+  module: ts.ModuleKind.ESNext,
+  moduleResolution: ts.ModuleResolutionKind.Bundler,
+  strict: true,
+  esModuleInterop: true,
+  skipLibCheck: true,
+  lib: ["lib.es2020.d.ts", "lib.dom.d.ts", "lib.dom.iterable.d.ts"],
+  types: [],
+};
+
+/**
+ * Walk up from startDir until we find a tsconfig.json, or hit the fs root.
+ */
+function findTsConfig(startDir: string): string | null {
+  let dir = startDir;
+  while (true) {
+    const candidate = path.join(dir, "tsconfig.json");
+    if (fs.existsSync(candidate)) return candidate;
+    const parent = path.dirname(dir);
+    if (parent === dir) return null; // reached root
+    dir = parent;
+  }
+}
+
+/**
+ * Read and parse a tsconfig.json, returning merged CompilerOptions.
+ * Falls back to DEFAULT_COMPILER_OPTIONS on any error.
+ */
+function loadCompilerOptions(tsconfigPath: string): ts.CompilerOptions {
+  try {
+    const configFile = ts.readConfigFile(tsconfigPath, ts.sys.readFile);
+    if (configFile.error) return DEFAULT_COMPILER_OPTIONS;
+    const parsed = ts.parseJsonConfigFileContent(
+      configFile.config,
+      ts.sys,
+      path.dirname(tsconfigPath),
+    );
+    if (parsed.errors.length) return DEFAULT_COMPILER_OPTIONS;
+    // Always set skipLibCheck to avoid noise from node_modules
+    return { ...parsed.options, skipLibCheck: true };
+  } catch {
+    return DEFAULT_COMPILER_OPTIONS;
+  }
+}
+
 export class TypeScriptClient {
   private fileVersions = new Map<string, number>();
   private fileContents = new Map<string, string>();
   private languageService: ts.LanguageService | null = null;
+  private compilerOptions: ts.CompilerOptions = DEFAULT_COMPILER_OPTIONS;
+  private lastTsconfigDir: string | null = null;
 
   constructor() {
     this.initialize();
@@ -50,30 +99,19 @@ export class TypeScriptClient {
       getScriptFileNames: () => Array.from(this.fileContents.keys()),
       getScriptVersion: (fileName: string) => {
         const normalized = fileName.replace(/\\/g, "/");
-        return String(this.fileVersions.get(normalized) || 0);
+        return String(this.fileVersions.get(normalized) ?? 0);
       },
       getScriptSnapshot: (fileName: string) => {
         const normalized = fileName.replace(/\\/g, "/");
         const content = this.fileContents.get(normalized);
         if (content) return ts.ScriptSnapshot.fromString(content);
-        // Try reading from disk
         if (fs.existsSync(fileName)) {
-          const diskContent = fs.readFileSync(fileName, "utf-8");
-          return ts.ScriptSnapshot.fromString(diskContent);
+          return ts.ScriptSnapshot.fromString(fs.readFileSync(fileName, "utf-8"));
         }
         return undefined;
       },
       getCurrentDirectory: () => process.cwd(),
-      getCompilationSettings: () => ({
-        target: ts.ScriptTarget.ES2020,
-        module: ts.ModuleKind.CommonJS,
-        strict: true,
-        esModuleInterop: true,
-        skipLibCheck: true,
-        moduleResolution: ts.ModuleResolutionKind.NodeJs,
-        lib: ["es2020"],
-        types: [],
-      }),
+      getCompilationSettings: () => this.compilerOptions,
       getDefaultLibFileName: (options) => ts.getDefaultLibFilePath(options),
       fileExists: (fileName) => ts.sys.fileExists(fileName),
       readFile: (fileName) => {
@@ -93,6 +131,21 @@ export class TypeScriptClient {
   }
 
   /**
+   * Detect tsconfig for the given file and refresh compilerOptions if the
+   * project root changed (avoids redundant re-parses across edits to the same project).
+   */
+  private refreshCompilerOptions(filePath: string): void {
+    const dir = path.dirname(path.resolve(filePath));
+    const tsconfigPath = findTsConfig(dir);
+    const key = tsconfigPath ?? dir;
+    if (key === this.lastTsconfigDir) return; // same project, no change
+    this.lastTsconfigDir = key;
+    this.compilerOptions = tsconfigPath
+      ? loadCompilerOptions(tsconfigPath)
+      : DEFAULT_COMPILER_OPTIONS;
+  }
+
+  /**
    * Add a file to the language service
    */
   addFile(filePath: string, content: string): void {
@@ -105,14 +158,12 @@ export class TypeScriptClient {
   }
 
   /**
-   * Update a file's content
+   * Update a file's content — also refreshes compilerOptions if project changed
    */
   updateFile(filePath: string, content: string): void {
+    this.refreshCompilerOptions(filePath);
     const normalized = this.normalizePath(filePath);
-    this.fileVersions.set(
-      normalized,
-      (this.fileVersions.get(normalized) || 0) + 1,
-    );
+    this.fileVersions.set(normalized, (this.fileVersions.get(normalized) ?? 0) + 1);
     this.fileContents.set(normalized, content);
   }
 
@@ -153,6 +204,7 @@ export class TypeScriptClient {
    * Get diagnostics (errors and warnings) for a file
    */
   getDiagnostics(filePath: string): Diagnostic[] {
+    this.refreshCompilerOptions(filePath);
     const normalized = this.normalizePath(filePath);
     this.ensureFile(filePath);
     if (!this.languageService) return [];

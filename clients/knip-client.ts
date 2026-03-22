@@ -86,7 +86,7 @@ export class KnipClient {
       const result = spawnSync("npx", [
         "knip",
         "--reporter=json",
-        "--include=unusedExports,unlistedDependencies",
+        "--include", "exports,types,dependencies,unlisted",
       ], {
         encoding: "utf-8",
         timeout: 30000,
@@ -191,31 +191,32 @@ export class KnipClient {
       const unusedDeps: KnipIssue[] = [];
       const unlistedDeps: KnipIssue[] = [];
 
-      // Knip JSON format has issues grouped by type
-      const allIssues = data.issues || data;
+      // Knip JSON format: { issues: [ { file, exports:[], files:[], dependencies:[], ... } ] }
+      const fileEntries: any[] = data.issues ?? [];
 
-      for (const [type, items] of Object.entries(allIssues)) {
-        if (!Array.isArray(items)) continue;
+      for (const entry of fileEntries) {
+        const file: string = entry.file ?? "";
 
-        for (const item of items) {
-          const issue: KnipIssue = {
-            type: this.mapType(type),
-            name: item.name || item.symbol || String(item),
-            file: item.filePath || item.file,
-            line: item.line,
-            package: item.package,
-          };
-
-          issues.push(issue);
-
-          switch (issue.type) {
-            case "export": unusedExports.push(issue); break;
-            case "file": unusedFiles.push(issue); break;
-            case "dependency": unusedDeps.push(issue); break;
-            case "devDependency": unusedDeps.push(issue); break;
-            case "unlisted": unlistedDeps.push(issue); break;
+        const push = (arr: any[], type: KnipIssue["type"], target: KnipIssue[]) => {
+          for (const item of arr) {
+            const issue: KnipIssue = {
+              type,
+              name: item.name ?? item.symbol ?? String(item),
+              file,
+              line: item.line,
+              package: item.package,
+            };
+            issues.push(issue);
+            target.push(issue);
           }
-        }
+        };
+
+        push(entry.exports ?? [], "export", unusedExports);
+        push(entry.types ?? [], "export", unusedExports);
+        push(entry.files ?? [], "file", unusedFiles);
+        push(entry.dependencies ?? [], "dependency", unusedDeps);
+        push(entry.devDependencies ?? [], "devDependency", unusedDeps);
+        push(entry.unlisted ?? [], "unlisted", unlistedDeps);
       }
 
       return {
@@ -239,15 +240,5 @@ export class KnipClient {
         summary: "Failed to parse output",
       };
     }
-  }
-
-  private mapType(type: string): KnipIssue["type"] {
-    const lower = type.toLowerCase();
-    if (lower.includes("unusedexport") || lower.includes("export")) return "export";
-    if (lower.includes("unusedfile") || lower.includes("file")) return "file";
-    if (lower.includes("unlisted")) return "unlisted";
-    if (lower.includes("dev")) return "devDependency";
-    if (lower.includes("dep")) return "dependency";
-    return "export";
   }
 }

@@ -26,12 +26,25 @@ export interface AstGrepDiagnostic {
   fix?: string;
 }
 
+// New ast-grep JSON format
 interface AstGrepJsonDiagnostic {
-  Message: {
+  ruleId: string;
+  severity: string;
+  message: string;
+  note?: string;
+  labels: Array<{
     text: string;
-  };
-  Severity: string;
-  spans: Array<{
+    range: {
+      start: { line: number; column: number };
+      end: { line: number; column: number };
+    };
+    file?: string;
+    style: string;
+  }>;
+  // Legacy format support
+  Message?: { text: string };
+  Severity?: string;
+  spans?: Array<{
     context: string;
     range: {
       start: { line: number; column: number };
@@ -39,8 +52,7 @@ interface AstGrepJsonDiagnostic {
     };
     file: string;
   }>;
-  name: string;
-  severity: string;
+  name?: string;
 }
 
 // --- Client ---
@@ -51,10 +63,15 @@ export class AstGrepClient {
   private log: (msg: string) => void;
 
   constructor(ruleDir?: string, verbose = false) {
-    this.ruleDir = ruleDir || path.join(__dirname, "..", "rules");
+    this.ruleDir = ruleDir || path.join(typeof __dirname !== "undefined" ? __dirname : ".", "..", "rules");
     this.log = verbose
       ? (msg: string) => console.log(`[ast-grep] ${msg}`)
       : () => {};
+    try {
+      const nodeFs2 = require("node:fs") as typeof import("node:fs");
+      nodeFs2.appendFileSync("C:/Users/R3LiC/Desktop/autofeedback-debug.log",
+        `[${new Date().toISOString()}] AstGrepClient constructed, __dirname=${typeof __dirname !== "undefined" ? __dirname : "undefined"}, ruleDir=${this.ruleDir}\n`);
+    } catch {}
   }
 
   /**
@@ -145,40 +162,86 @@ export class AstGrepClient {
 
   private parseOutput(output: string, filterFile: string): AstGrepDiagnostic[] {
     const diagnostics: AstGrepDiagnostic[] = [];
+    const resolvedFilterFile = path.resolve(filterFile);
 
-    // Parse ndjson (one JSON object per line)
+    // Try parsing as JSON array first (new format)
+    try {
+      const items: AstGrepJsonDiagnostic[] = JSON.parse(output);
+      if (Array.isArray(items)) {
+        for (const item of items) {
+          const diag = this.parseDiagnostic(item, resolvedFilterFile);
+          if (diag) diagnostics.push(diag);
+        }
+        return diagnostics;
+      }
+    } catch {
+      // Not a JSON array, try ndjson format (legacy)
+    }
+
+    // Parse ndjson (one JSON object per line) - legacy format
     const lines = output.split("\n").filter(l => l.trim());
 
     for (const line of lines) {
       try {
         const item: AstGrepJsonDiagnostic = JSON.parse(line);
-        if (!item.spans || item.spans.length === 0) continue;
-
-        const span = item.spans[0];
-        const filePath = path.resolve(span.file || filterFile);
-
-        // Filter to our file
-        if (filePath !== path.resolve(filterFile)) continue;
-
-        const start = span.range?.start || { line: 0, column: 0 };
-        const end = span.range?.end || start;
-
-        diagnostics.push({
-          line: start.line,
-          column: start.column,
-          endLine: end.line,
-          endColumn: end.column,
-          severity: this.mapSeverity(item.severity || item.Severity),
-          message: item.Message?.text || "Unknown issue",
-          rule: item.name || "unknown",
-          file: filePath,
-        });
+        const diag = this.parseDiagnostic(item, resolvedFilterFile);
+        if (diag) diagnostics.push(diag);
       } catch {
         // Skip unparseable lines
       }
     }
 
     return diagnostics;
+  }
+
+  private parseDiagnostic(item: AstGrepJsonDiagnostic, filterFile: string): AstGrepDiagnostic | null {
+    // New format uses labels array
+    if (item.labels && item.labels.length > 0) {
+      const label = item.labels.find(l => l.style === "primary") || item.labels[0];
+      const filePath = path.resolve(label.file || filterFile);
+
+      // Filter to our file
+      if (filePath !== filterFile) return null;
+
+      const start = label.range?.start || { line: 0, column: 0 };
+      const end = label.range?.end || start;
+
+      return {
+        line: start.line + 1, // ast-grep is 0-indexed, we want 1-indexed
+        column: start.column,
+        endLine: end.line + 1,
+        endColumn: end.column,
+        severity: this.mapSeverity(item.severity),
+        message: item.message || "Unknown issue",
+        rule: item.ruleId || "unknown",
+        file: filePath,
+      };
+    }
+
+    // Legacy format uses spans array
+    if (item.spans && item.spans.length > 0) {
+      const span = item.spans[0];
+      const filePath = path.resolve(span.file || filterFile);
+
+      // Filter to our file
+      if (filePath !== filterFile) return null;
+
+      const start = span.range?.start || { line: 0, column: 0 };
+      const end = span.range?.end || start;
+
+      return {
+        line: start.line + 1,
+        column: start.column,
+        endLine: end.line + 1,
+        endColumn: end.column,
+        severity: this.mapSeverity(item.severity || item.Severity || "warning"),
+        message: item.Message?.text || item.message || "Unknown issue",
+        rule: item.name || item.ruleId || "unknown",
+        file: filePath,
+      };
+    }
+
+    return null;
   }
 
   private mapSeverity(severity: string): AstGrepDiagnostic["severity"] {
