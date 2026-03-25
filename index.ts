@@ -38,6 +38,11 @@ import { JscpdClient } from "./clients/jscpd-client.js";
 import { KnipClient } from "./clients/knip-client.js";
 import { RuffClient } from "./clients/ruff-client.js";
 import { TodoScanner } from "./clients/todo-scanner.js";
+import { ComplexityClient } from "./clients/complexity-client.js";
+import { GoClient } from "./clients/go-client.js";
+import { MetricsClient } from "./clients/metrics-client.js";
+import { RustClient } from "./clients/rust-client.js";
+import { TestRunnerClient } from "./clients/test-runner-client.js";
 import { TypeCoverageClient } from "./clients/type-coverage-client.js";
 import { TypeScriptClient } from "./clients/typescript-client.js";
 
@@ -72,6 +77,11 @@ export default function (pi: ExtensionAPI) {
 	const jscpdClient = new JscpdClient();
 	const typeCoverageClient = new TypeCoverageClient();
 	const depChecker = new DependencyChecker();
+	const testRunnerClient = new TestRunnerClient();
+	const metricsClient = new MetricsClient();
+	const complexityClient = new ComplexityClient();
+	const goClient = new GoClient();
+	const rustClient = new RustClient();
 
 	// --- Flags ---
 
@@ -122,6 +132,24 @@ export default function (pi: ExtensionAPI) {
 		description: "Auto-fix Ruff lint/format issues on write",
 		type: "boolean",
 		default: true,
+	});
+
+	pi.registerFlag("no-tests", {
+		description: "Disable test runner on write",
+		type: "boolean",
+		default: false,
+	});
+
+	pi.registerFlag("no-go", {
+		description: "Disable Go linting (go vet)",
+		type: "boolean",
+		default: false,
+	});
+
+	pi.registerFlag("no-rust", {
+		description: "Disable Rust linting (cargo check)",
+		type: "boolean",
+		default: false,
 	});
 
 	// --- Commands ---
@@ -269,6 +297,152 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
+	pi.registerCommand("lens-metrics", {
+		description: "Scan project for complexity metrics (maintainability, cognitive complexity, etc.). Usage: /lens-metrics [path]",
+		handler: async (args, ctx) => {
+			const targetPath = args.trim() || ctx.cwd || process.cwd();
+			ctx.ui.notify("🔍 Scanning project metrics...", "info");
+
+			const startTime = Date.now();
+			const results: import("./clients/complexity-client.js").FileComplexity[] = [];
+
+			const scanDir = (dir: string) => {
+				if (!require("node:fs").existsSync(dir)) return;
+				const entries = require("node:fs").readdirSync(dir, { withFileTypes: true });
+
+				for (const entry of entries) {
+					const fullPath = path.join(dir, entry.name);
+					if (entry.isDirectory()) {
+						if (["node_modules", ".git", "dist", "build", ".next", ".pi-lens"].includes(entry.name)) continue;
+						scanDir(fullPath);
+					} else if (complexityClient.isSupportedFile(fullPath)) {
+						const metrics = complexityClient.analyzeFile(fullPath);
+						if (metrics) {
+							results.push(metrics);
+						}
+					}
+				}
+			};
+
+			scanDir(targetPath);
+			const duration = Date.now() - startTime;
+
+			if (results.length === 0) {
+				ctx.ui.notify("✓ No TS/JS files found", "info");
+				return;
+			}
+
+			// Calculate aggregates
+			const avgMI = results.reduce((a, b) => a + b.maintainabilityIndex, 0) / results.length;
+			const avgCognitive = results.reduce((a, b) => a + b.cognitiveComplexity, 0) / results.length;
+			const avgCyclomatic = results.reduce((a, b) => a + b.cyclomaticComplexity, 0) / results.length;
+			const maxNesting = Math.max(...results.map(r => r.maxNestingDepth));
+			const avgHalstead = results.reduce((a, b) => a + b.halsteadVolume, 0) / results.length;
+
+			// Find problem files
+			const lowMI = results.filter(r => r.maintainabilityIndex < 60).sort((a, b) => a.maintainabilityIndex - b.maintainabilityIndex);
+			const highCognitive = results.filter(r => r.cognitiveComplexity > 20).sort((a, b) => b.cognitiveComplexity - a.cognitiveComplexity);
+			const highNesting = results.filter(r => r.maxNestingDepth > 5).sort((a, b) => b.maxNestingDepth - a.maxNestingDepth);
+
+			// Build markdown report
+			const now = new Date();
+			const timestamp = now.toISOString().replace(/[:.]/g, "-").slice(0, 19);
+			const dateStr = now.toISOString().slice(0, 10);
+			const timeStr = now.toISOString().slice(11, 19);
+
+			let report = `# Lens Metrics Report\n\n`;
+			report += `**Date:** ${dateStr} ${timeStr}\n`;
+			report += `**Files scanned:** ${results.length}\n`;
+			report += `**Scan time:** ${duration}ms\n\n`;
+			report += `## Aggregate\n\n`;
+			report += `| Metric | Value |\n`;
+			report += `|--------|-------|\n`;
+			report += `| Maintainability Index | ${avgMI.toFixed(1)} (avg) |\n`;
+			report += `| Cognitive Complexity | ${avgCognitive.toFixed(1)} (avg) |\n`;
+			report += `| Cyclomatic Complexity | ${avgCyclomatic.toFixed(1)} (avg) |\n`;
+			report += `| Halstead Volume | ${avgHalstead.toFixed(1)} (avg) |\n`;
+			report += `| Max Nesting Depth | ${maxNesting} levels |\n\n`;
+
+			if (lowMI.length > 0) {
+				report += `## Low Maintainability (MI < 60)\n\n`;
+				report += `| File | MI |\n`;
+				report += `|------|-----|\n`;
+				for (const f of lowMI) {
+					report += `| ${f.filePath} | ${f.maintainabilityIndex.toFixed(1)} |\n`;
+				}
+				report += `\n`;
+			}
+
+			if (highCognitive.length > 0) {
+				report += `## High Cognitive Complexity (> 20)\n\n`;
+				report += `| File | Cognitive | Cyclomatic | Max Nesting |\n`;
+				report += `|------|-----------|------------|-------------|\n`;
+				for (const f of highCognitive) {
+					report += `| ${f.filePath} | ${f.cognitiveComplexity} | ${f.cyclomaticComplexity} | ${f.maxNestingDepth} |\n`;
+				}
+				report += `\n`;
+			}
+
+			if (highNesting.length > 0) {
+				report += `## Deep Nesting (> 5 levels)\n\n`;
+				report += `| File | Max Nesting |\n`;
+				report += `|------|-------------|\n`;
+				for (const f of highNesting) {
+					report += `| ${f.filePath} | ${f.maxNestingDepth} levels |\n`;
+				}
+				report += `\n`;
+			}
+
+			// All files sorted by MI
+			report += `## All Files\n\n`;
+			report += `| File | MI | Cognitive | Cyclomatic | Nesting | Halstead |\n`;
+			report += `|------|-----|-----------|------------|---------|----------|\n`;
+			for (const f of results.sort((a, b) => a.maintainabilityIndex - b.maintainabilityIndex)) {
+				report += `| ${f.filePath} | ${f.maintainabilityIndex.toFixed(1)} | ${f.cognitiveComplexity} | ${f.cyclomaticComplexity} | ${f.maxNestingDepth} | ${f.halsteadVolume.toFixed(0)} |\n`;
+			}
+
+			// Save report
+			const fs = require("node:fs");
+			const metricsDir = path.join(targetPath, ".pi-lens", "metrics");
+			if (!fs.existsSync(metricsDir)) {
+				fs.mkdirSync(metricsDir, { recursive: true });
+			}
+			const timestampedPath = path.join(metricsDir, `metrics-${timestamp}.md`);
+			const latestPath = path.join(metricsDir, "latest.md");
+			fs.writeFileSync(timestampedPath, report);
+			fs.writeFileSync(latestPath, report);
+
+			// Build summary for UI (shorter)
+			let summary = `[Lens Metrics] ${results.length} file(s) scanned in ${duration}ms\n\n`;
+			summary += `── Aggregate ──\n`;
+			summary += `  Maintainability Index: ${avgMI.toFixed(1)} (avg)\n`;
+			summary += `  Cognitive Complexity: ${avgCognitive.toFixed(1)} (avg)\n`;
+			summary += `  Cyclomatic Complexity: ${avgCyclomatic.toFixed(1)} (avg)\n`;
+			summary += `  Halstead Volume: ${avgHalstead.toFixed(1)} (avg)\n`;
+			summary += `  Max Nesting Depth: ${maxNesting} levels\n`;
+
+			if (lowMI.length > 0) {
+				summary += `\n── Low Maintainability (MI < 60) ──\n`;
+				for (const f of lowMI.slice(0, 5)) {
+					summary += `  ✗ ${f.filePath}: MI ${f.maintainabilityIndex.toFixed(1)}\n`;
+				}
+				if (lowMI.length > 5) summary += `  ... and ${lowMI.length - 5} more\n`;
+			}
+
+			if (highCognitive.length > 0) {
+				summary += `\n── High Cognitive Complexity (> 20) ──\n`;
+				for (const f of highCognitive.slice(0, 5)) {
+					summary += `  ⚠ ${f.filePath}: ${f.cognitiveComplexity}\n`;
+				}
+				if (highCognitive.length > 5) summary += `  ... and ${highCognitive.length - 5} more\n`;
+			}
+
+			summary += `\n📁 Full report saved to: .pi-lens/metrics/latest.md`;
+
+			ctx.ui.notify(summary, "info");
+		},
+	});
+
 	pi.registerCommand("format", {
 		description:
 			"Apply Biome formatting to files. Usage: /format [file-path] or /format --all",
@@ -406,12 +580,20 @@ export default function (pi: ExtensionAPI) {
 
 	// Delivered once into the first tool_result of the session, then cleared
 	let sessionSummary: string | null = null;
+	let sessionMetricsShown = false;
+	let cachedJscpdClones: import("./clients/jscpd-client.js").DuplicateClone[] = [];
+	const complexityBaselines: Map<string, import("./clients/complexity-client.js").FileComplexity> = new Map();
 
 	// --- Events ---
 
 	pi.on("session_start", async (_event, ctx) => {
 		_verbose = !!pi.getFlag("lens-verbose");
 		dbg("session_start fired");
+
+		// Reset session state
+		sessionMetricsShown = false;
+		metricsClient.reset();
+		complexityBaselines.clear();
 
 		// Log available tools
 		const tools: string[] = [];
@@ -429,6 +611,17 @@ export default function (pi: ExtensionAPI) {
 
 		const cwd = ctx.cwd ?? process.cwd();
 		dbg(`session_start cwd: ${cwd}`);
+
+		// Log test runner if detected
+		const detectedRunner = testRunnerClient.detectRunner(cwd);
+		if (detectedRunner) {
+			tools.push(`Test runner (${detectedRunner.runner})`);
+		}
+		if (goClient.isGoAvailable()) tools.push("Go (go vet)");
+		if (rustClient.isAvailable()) tools.push("Rust (cargo)");
+		log(`Active tools: ${tools.join(", ")}`);
+		dbg(`session_start tools: ${tools.join(", ")}`);
+
 		const parts: string[] = [];
 
 		// TODO/FIXME scan — fast, no deps
@@ -447,9 +640,10 @@ export default function (pi: ExtensionAPI) {
 			dbg(`session_start Knip: not available`);
 		}
 
-		// Duplicate code detection
+		// Duplicate code detection (cached for real-time feedback)
 		if (jscpdClient.isAvailable()) {
 			const jscpdResult = jscpdClient.scan(cwd);
+			cachedJscpdClones = jscpdResult.clones;
 			const jscpdReport = jscpdClient.formatResult(jscpdResult);
 			dbg(`session_start jscpd scan done`);
 			if (jscpdReport) parts.push(jscpdReport);
@@ -493,6 +687,17 @@ export default function (pi: ExtensionAPI) {
 			`tool_call fired for: ${filePath} (exists: ${fs.existsSync(filePath)})`,
 		);
 		if (!fs.existsSync(filePath)) return;
+
+		// Record baseline for metrics tracking
+		metricsClient.recordBaseline(filePath);
+
+		// Record complexity baseline for TS/JS files
+		if (complexityClient.isSupportedFile(filePath) && !complexityBaselines.has(filePath)) {
+			const baseline = complexityClient.analyzeFile(filePath);
+			if (baseline) {
+				complexityBaselines.set(filePath, baseline);
+			}
+		}
 
 		const hints: string[] = [];
 
@@ -555,12 +760,18 @@ export default function (pi: ExtensionAPI) {
 		const preHint = preWriteHints.get(filePath);
 		preWriteHints.delete(filePath);
 
+		// Record write for metrics (silent tracking)
+		const fs = require("node:fs") as typeof import("node:fs");
+		if (fs.existsSync(filePath)) {
+			const content = fs.readFileSync(filePath, "utf-8");
+			metricsClient.recordWrite(filePath, content);
+		}
+
 		let lspOutput = sessionDump ? `\n\n${sessionDump}` : "";
 		if (preHint) lspOutput += `\n\n${preHint}`;
 
 		// TypeScript LSP diagnostics
 		if (!pi.getFlag("no-lsp") && tsClient.isTypeScriptFile(filePath)) {
-			const fs = require("node:fs");
 			if (fs.existsSync(filePath)) {
 				tsClient.updateFile(filePath, fs.readFileSync(filePath, "utf-8"));
 			}
@@ -662,6 +873,102 @@ export default function (pi: ExtensionAPI) {
 				if (fixable.length > 0) {
 					lspOutput += `\n\n[Biome] ${fixable.length} fixable — enable --autofix-biome flag or run /format`;
 				}
+			}
+		}
+
+		// Go — go vet diagnostics
+		if (!pi.getFlag("no-go") && goClient.isGoFile(filePath) && goClient.isGoAvailable()) {
+			const goDiags = goClient.checkFile(filePath);
+			if (goDiags.length > 0) {
+				lspOutput += `\n\n${goClient.formatDiagnostics(goDiags)}`;
+			}
+		}
+
+		// Rust — cargo check diagnostics
+		if (!pi.getFlag("no-rust") && rustClient.isRustFile(filePath) && rustClient.isAvailable()) {
+			const cwd = process.cwd();
+			const rustDiags = rustClient.checkFile(filePath, cwd);
+			if (rustDiags.length > 0) {
+				lspOutput += `\n\n${rustClient.formatDiagnostics(rustDiags)}`;
+			}
+		}
+
+		// Test runner — run tests for the edited file
+		if (!pi.getFlag("no-tests")) {
+			const cwd = process.cwd();
+			dbg(`  test runner: checking for tests for ${filePath}`);
+			const detected = testRunnerClient.detectRunner(cwd);
+			dbg(`  test runner: detected runner: ${detected?.runner || "none"}`);
+			if (detected) {
+				const testInfo = testRunnerClient.findTestFile(filePath, cwd);
+				dbg(`  test runner: testInfo: ${testInfo ? testInfo.testFile : "none"}`);
+				if (testInfo) {
+					dbg(`  test file found: ${testInfo.testFile} (${testInfo.runner})`);
+					const testResult = testRunnerClient.runTestFile(
+						testInfo.testFile,
+						cwd,
+						testInfo.runner,
+						detected.config,
+					);
+					testResult.sourceFile = filePath;
+					const testReport = testRunnerClient.formatResult(testResult);
+					dbg(`  test report: ${testReport || "(empty)"}`);
+					if (testReport) {
+						lspOutput += `\n\n${testReport}`;
+					}
+				}
+			}
+		}
+
+		// Check for code duplication involving the edited file
+		if (cachedJscpdClones.length > 0) {
+			const fileClones = cachedJscpdClones.filter(
+				clone => path.resolve(clone.fileA) === path.resolve(filePath) ||
+				         path.resolve(clone.fileB) === path.resolve(filePath)
+			);
+			if (fileClones.length > 0) {
+				dbg(`  jscpd: ${fileClones.length} duplicate(s) involving ${filePath}`);
+				let dupReport = `[jscpd] ${fileClones.length} duplicate block(s) involving ${path.basename(filePath)}:\n`;
+				for (const clone of fileClones.slice(0, 3)) {
+					const other = path.resolve(clone.fileA) === path.resolve(filePath)
+						? `${path.basename(clone.fileB)}:${clone.startB}`
+						: `${path.basename(clone.fileA)}:${clone.startA}`;
+					dupReport += `  ${clone.lines} lines — ${other}\n`;
+				}
+				if (fileClones.length > 3) {
+					dupReport += `  ... and ${fileClones.length - 3} more\n`;
+				}
+				lspOutput += `\n\n${dupReport}`;
+			}
+		}
+
+		// Silent metrics summary (appended to first tool_result after files are touched)
+		const metricsSummary = metricsClient.formatSessionSummary();
+		if (metricsSummary) {
+			dbg(`  metrics summary available`);
+			// Only add once per session (check if we've already shown it)
+			if (!sessionMetricsShown) {
+				// Build combined metrics + complexity summary
+				let combinedSummary = metricsSummary;
+
+				// Add complexity delta for changed files
+				const complexityDeltas: string[] = [];
+				for (const [filePath, baseline] of complexityBaselines) {
+					if (fs.existsSync(filePath)) {
+						const current = complexityClient.analyzeFile(filePath);
+						if (current) {
+							const delta = complexityClient.formatDelta(baseline, current);
+							if (delta) complexityDeltas.push(delta);
+						}
+					}
+				}
+
+				if (complexityDeltas.length > 0) {
+					combinedSummary += `\n\n[Complexity Changes]${complexityDeltas.join("\n")}`;
+				}
+
+				lspOutput += `\n\n${combinedSummary}`;
+				sessionMetricsShown = true;
 			}
 		}
 

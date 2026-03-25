@@ -1,1 +1,36 @@
+# Dependencies
 node_modules/
+
+# pi-lens internal
+.pi-lens/metrics/
+
+# Build artifacts
+target/
+dist/
+build/
+out/
+
+# Test artifacts (created during testing, not test files)
+test_main.go
+vitest.config.ts
+src/main.rs
+
+# Go/Rust test build files
+go.mod
+Cargo.toml
+Cargo.lock
+
+# Documentation artifacts
+SCA.md
+review.md
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+
+# Debug logs
+pi-lens-debug.log

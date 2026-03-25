@@ -14,6 +14,8 @@ Real-time code quality feedback for [pi](https://github.com/mariozechner/pi-codi
 | **ast-grep** | 60+ structural rules: `no-var`, `no-eval`, `no-debugger`, `no-as-any`, `prefer-template`, `no-throw-string`, `no-hardcoded-secrets`, `no-return-await`, nested ternaries, strict equality, and more |
 | **Biome** | Lint + format for JS/TS/JSX/TSX/CSS/JSON. Auto-fixes on every write by default |
 | **Ruff** | Lint + format for Python. Auto-fixes on every write by default |
+| **Test Runner** | Runs corresponding test file when you edit source code (vitest, jest, pytest). Silent if no test file exists. |
+| **Complexity Metrics** | AST-based analysis: Maintainability Index, Cyclomatic/Cognitive Complexity, Halstead Volume, nesting depth, function length. |
 
 ### Pre-write hints
 
@@ -71,6 +73,7 @@ Example:
 | `/check-deps` | Circular dependency scan (requires madge) |
 | `/format [file|--all]` | Apply Biome formatting |
 | `/design-review [path]` | Analyze files for design smells (long methods, large classes, etc.) |
+| `/lens-metrics [path]` | Full project complexity scan (Maintainability Index, Cognitive/Cyclomatic Complexity, Halstead Volume) |
 
 ### On-demand tools
 
@@ -112,6 +115,9 @@ pip install ruff
 | `--no-ruff` | `false` | Disable Ruff |
 | `--no-lsp` | `false` | Disable TypeScript LSP |
 | `--no-madge` | `false` | Disable circular dependency checking |
+| `--no-tests` | `false` | Disable test runner on write |
+| `--no-go` | `false` | Disable Go linting |
+| `--no-rust` | `false` | Disable Rust linting |
 | `--lens-verbose` | `false` | Enable verbose logging |
 
 ---

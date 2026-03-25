@@ -9,7 +9,9 @@
 	"main": "index.ts",
 	"scripts": {
 		"build": "tsc",
-		"watch": "tsc --watch"
+		"watch": "tsc --watch",
+		"test": "vitest run",
+		"test:watch": "vitest"
 	},
 	"keywords": [
 		"pi",
@@ -45,7 +47,8 @@
 	},
 	"devDependencies": {
 		"@types/node": "^22.10.5",
-		"typescript": "^5.0.0"
+		"typescript": "^5.0.0",
+		"vitest": "^4.1.1"
 	},
 	"pi": {
 		"extensions": [

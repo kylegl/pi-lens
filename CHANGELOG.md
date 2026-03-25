@@ -5,8 +5,13 @@ All notable changes to pi-lens will be documented in this file.
 ## [1.4.0] - 2026-03-23
 
 ### Added
+- **Test runner feedback**: Runs corresponding test file on every write (vitest, jest, pytest). Silent if no test file exists. Disable with `--no-tests`.
+- **Complexity metrics**: AST-based analysis: Maintainability Index, Cyclomatic/Cognitive Complexity, Halstead Volume, nesting depth, function length.
+- **`/lens-metrics` command**: Full project complexity scan.
 - **Design smell rules**: New `long-method`, `long-parameter-list`, and `large-class` rules for structural quality checks.
 - **`/design-review` command**: Analyze files for design smells. Usage: `/design-review [path]`
+- **Go language support**: New Go client for Go projects.
+- **Rust language support**: New Rust client for Rust projects.
 
 ### Changed
 - **Improved ast-grep tool descriptions**: Better pattern guidance to prevent overly broad searches.
