@@ -334,7 +334,7 @@ export default function (pi: ExtensionAPI) {
 						}
 					}
 				} catch (_err: any) {
-					// ast-grep scan failed, skip
+					dbg(`ast-grep scan failed: ${_err.message}`);
 				}
 			}
 
