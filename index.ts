@@ -1044,32 +1044,13 @@ export default function (pi: ExtensionAPI) {
 			}
 		}
 
-		if (
-			/\.(ts|tsx|js|jsx)$/.test(filePath) &&
-			!pi.getFlag("no-biome") &&
-			biomeClient.isAvailable()
-		) {
-			const diags = biomeClient.checkFile(filePath);
-			if (diags.length > 0) {
-				hints.push(
-					`⚠ Pre-write: file already has ${diags.length} Biome issue(s)`,
-				);
-			}
-		}
-
+		// Snapshot baselines for delta mode (no pre-write hints — delta handles it)
 		if (!pi.getFlag("no-ast-grep") && astGrepClient.isAvailable()) {
-			const diags = astGrepClient.scanFile(filePath);
-			astGrepBaselines.set(filePath, diags);
-			if (diags.length > 0) {
-				hints.push(
-					`⚠ Pre-write: file already has ${diags.length} structural violations`,
-				);
-			}
+			astGrepBaselines.set(filePath, astGrepClient.scanFile(filePath));
 		}
 
 		if (!pi.getFlag("no-biome") && biomeClient.isAvailable() && biomeClient.isSupportedFile(filePath)) {
-			const diags = biomeClient.checkFile(filePath).filter(d => d.category === "lint" || d.severity === "error");
-			biomeBaselines.set(filePath, diags);
+			biomeBaselines.set(filePath, biomeClient.checkFile(filePath).filter(d => d.category === "lint" || d.severity === "error"));
 		}
 
 		dbg(`  pre-write hints: ${hints.length} — ${hints.join(" | ") || "none"}`);
