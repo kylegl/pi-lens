@@ -2,6 +2,24 @@
 
 All notable changes to pi-lens will be documented in this file.
 
+## [2.0.1] - 2026-03-25
+
+### Fixed
+- **ast-grep in `/lens-booboo` was silently dropping all results** — newer ast-grep versions exit `0` with `--json` even when issues are found; fixed the exit code check.
+- **Renamed "Design Smells" to "ast-grep"** in booboo report — the scan runs all 65 rules (security, correctness, style, design), not just design smells.
+
+### Changed
+- **Stronger real-time feedback messages** — all messages now use severity emoji and imperative language:
+  - `🔴 Fix N TypeScript error(s) — these must be resolved`
+  - `🧹 Remove N unused import(s) — they are dead code`
+  - `🔴 You introduced N new structural violation(s) — fix before moving on`
+  - `🟠 You introduced N new Biome violation(s) — fix before moving on`
+  - `🟡 Complexity issues — refactor when you get a chance`
+  - `🟠 This file has N duplicate block(s) — extract to shared utilities`
+  - `🔴 Do not redefine — N function(s) already exist elsewhere`
+- **Biome fix command is now a real bash command** — `npx @biomejs/biome check --write <file>` instead of `/lens-format` (which is a pi UI command, not runnable from agent tools).
+- **Complexity warnings skip test files in real-time** — same exclusion as lens-booboo.
+
 ## [2.0.0] - 2026-03-25
 
 ### Added

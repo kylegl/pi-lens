@@ -24,30 +24,29 @@ Real-time code quality feedback for [pi](https://github.com/mariozechner/pi-codi
 ast-grep and Biome run in **delta mode** — only violations *introduced by the current edit* are shown. Pre-existing issues are silent. Fixed violations are acknowledged.
 
 ```
-[TypeScript] 2 issue(s):
-  [error] L10: Type 'string' is not assignable to type 'number'
+🔴 Fix 2 TypeScript error(s) — these must be resolved:
+  L10: Type 'string' is not assignable to type 'number'
 
-[ast-grep] +1 new issue(s) introduced:
-  no-var: Use 'const' or 'let' instead of 'var' (L23) [fixable]
+🔴 You introduced 1 new structural violation(s) — fix before moving on:
+  no-var: Use 'const' or 'let' instead of 'var' (L23)
     → var has function scope and can lead to unexpected hoisting behavior.
-  (18 total)
+  (18 total remaining)
 
-[ast-grep] ✓ Fixed: no-console-log (-1)
+✅ ast-grep: fixed no-console-log (-1)
 
-[Biome] +1 new issue(s) introduced:
+🟠 You introduced 1 new Biome violation(s) — fix before moving on:
   L23:5 [style/useConst] This let declares a variable that is only assigned once.
-  1 fixable — run /lens-format
-  (4 total)
+  → Auto-fixable: `npx @biomejs/biome check --write utils.ts`
+  (4 total remaining)
 
-[jscpd] 1 duplicate block(s) involving utils.ts:
-  15 lines — helpers.ts:20
-  → Extract duplicated code to a shared utility function
+🟠 This file has 1 duplicate block(s) — extract to shared utilities:
+  15 lines duplicated with helpers.ts:20
 
-[Duplicate Exports] 1 function(s) already exist:
+🔴 Do not redefine — 1 function(s) already exist elsewhere:
   formatDate (already in helpers.ts)
-  → Import the existing function instead of redefining it
+  → Import the existing function instead
 
-[Complexity Warnings]
+🟡 Complexity issues — refactor when you get a chance:
   ⚠ Maintainability dropped to 55 — extract logic into helper functions
   ⚠ AI-style comments (6) — remove hand-holding comments
   ⚠ Many try/catch blocks (7) — consolidate error handling
