@@ -242,6 +242,9 @@ export default function (pi: ExtensionAPI) {
 						"scan",
 						"--config", configPath,
 						"--json",
+						"--globs", "!**/*.test.ts",
+						"--globs", "!**/*.spec.ts",
+						"--globs", "!**/test-utils.ts",
 						targetPath,
 					], {
 						encoding: "utf-8",
