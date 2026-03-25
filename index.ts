@@ -569,6 +569,169 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
+	pi.registerCommand("lens-metrics", {
+		description:
+			"Measure complexity metrics for all files and export to report.md. Usage: /lens-metrics [path]",
+		handler: async (args, ctx) => {
+			const targetPath = args.trim() || ctx.cwd || process.cwd();
+			ctx.ui.notify("📊 Measuring code metrics...", "info");
+
+			const fs = require("node:fs");
+			const reviewDir = path.join(process.cwd(), ".pi-lens", "reviews");
+			const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+			const projectName = path.basename(process.cwd());
+
+			const results: import("./clients/complexity-client.js").FileComplexity[] = [];
+
+			const scanDir = (dir: string) => {
+				if (!fs.existsSync(dir)) return;
+				const entries = fs.readdirSync(dir, { withFileTypes: true });
+
+				for (const entry of entries) {
+					const fullPath = path.join(dir, entry.name);
+					if (entry.isDirectory()) {
+						if (["node_modules", ".git", "dist", "build", ".next", ".pi-lens"].includes(entry.name)) continue;
+						scanDir(fullPath);
+					} else if (complexityClient.isSupportedFile(fullPath)) {
+						const metrics = complexityClient.analyzeFile(fullPath);
+						if (metrics) {
+							results.push(metrics);
+						}
+					}
+				}
+			};
+
+			scanDir(targetPath);
+
+			if (results.length === 0) {
+				ctx.ui.notify("No supported files found to analyze", "warning");
+				return;
+			}
+
+			// Calculate aggregates
+			const avgMI = results.reduce((a, b) => a + b.maintainabilityIndex, 0) / results.length;
+			const avgCognitive = results.reduce((a, b) => a + b.cognitiveComplexity, 0) / results.length;
+			const avgCyclomatic = results.reduce((a, b) => a + b.cyclomaticComplexity, 0) / results.length;
+			const avgFunctionLength = results.reduce((a, b) => a + b.avgFunctionLength, 0) / results.length;
+			const maxNesting = Math.max(...results.map(r => r.maxNestingDepth));
+			const maxCognitive = Math.max(...results.map(r => r.cognitiveComplexity));
+			const minMI = Math.min(...results.map(r => r.maintainabilityIndex));
+			const totalFunctions = results.reduce((a, b) => a + b.functionCount, 0);
+			const totalLOC = results.reduce((a, b) => a + b.linesOfCode, 0);
+
+			// Grade distribution
+			const grades = results.map(r => {
+				const mi = r.maintainabilityIndex;
+				if (mi >= 80) return { letter: "A", color: "🟢" };
+				if (mi >= 60) return { letter: "B", color: "🟡" };
+				if (mi >= 40) return { letter: "C", color: "🟠" };
+				if (mi >= 20) return { letter: "D", color: "🔴" };
+				return { letter: "F", color: "⚫" };
+			});
+
+			const gradeCount = { A: 0, B: 0, C: 0, D: 0, F: 0 };
+			grades.forEach(g => gradeCount[g.letter as keyof typeof gradeCount]++);
+
+			// Build report
+			let report = `# Code Metrics Report: ${projectName}\n\n`;
+			report += `**Generated:** ${new Date().toISOString()}\n\n`;
+			report += `**Path:** \`${targetPath}\`\n\n`;
+			report += `---\n\n`;
+
+			// Summary
+			report += `## Summary\n\n`;
+			report += `| Metric | Value |\n`;
+			report += `|--------|-------|\n`;
+			report += `| Files Analyzed | ${results.length} |\n`;
+			report += `| Total Functions | ${totalFunctions} |\n`;
+			report += `| Total Lines of Code | ${totalLOC.toLocaleString()} |\n`;
+			report += `| Avg Maintainability Index | ${avgMI.toFixed(1)} |\n`;
+			report += `| Min Maintainability Index | ${minMI.toFixed(1)} |\n`;
+			report += `| Avg Cognitive Complexity | ${avgCognitive.toFixed(1)} |\n`;
+			report += `| Max Cognitive Complexity | ${maxCognitive} |\n`;
+			report += `| Avg Cyclomatic Complexity | ${avgCyclomatic.toFixed(1)} |\n`;
+			report += `| Max Nesting Depth | ${maxNesting} |\n`;
+			report += `| Avg Function Length | ${avgFunctionLength.toFixed(1)} lines |\n\n`;
+
+			// Grade distribution
+			report += `## Maintainability Grade Distribution\n\n`;
+			report += `| Grade | Count | Percentage |\n`;
+			report += `|-------|-------|------------|\n`;
+			for (const [grade, count] of Object.entries(gradeCount)) {
+				const pct = ((count / results.length) * 100).toFixed(1);
+				const icon = grade === "A" ? "🟢" : grade === "B" ? "🟡" : grade === "C" ? "🟠" : grade === "D" ? "🔴" : "⚫";
+				report += `| ${icon} ${grade} (MI ≥ ${grade === "A" ? 80 : grade === "B" ? 60 : grade === "C" ? 40 : grade === "D" ? 20 : 0}) | ${count} | ${pct}% |\n`;
+			}
+			report += `\n`;
+
+			// All files table (sorted by MI ascending)
+			report += `## All Files\n\n`;
+			report += `| Grade | File | MI | Cognitive | Cyclomatic | Nesting | Functions | LOC | Entropy |\n`;
+			report += `|-------|------|-----|-----------|------------|---------|-----------|-----|--------|\n`;
+
+			const sorted = [...results].sort((a, b) => a.maintainabilityIndex - b.maintainabilityIndex);
+			for (const f of sorted) {
+				const mi = f.maintainabilityIndex;
+				let grade: string;
+				if (mi >= 80) grade = "🟢 A";
+				else if (mi >= 60) grade = "🟡 B";
+				else if (mi >= 40) grade = "🟠 C";
+				else if (mi >= 20) grade = "🔴 D";
+				else grade = "⚫ F";
+
+				// Make path relative for readability
+				const relPath = path.relative(targetPath, f.filePath);
+
+				report += `| ${grade} | ${relPath} | ${mi.toFixed(1)} | ${f.cognitiveComplexity} | ${f.cyclomaticComplexity.toFixed(1)} | ${f.maxNestingDepth} | ${f.functionCount} | ${f.linesOfCode} | ${f.codeEntropy.toFixed(2)} |\n`;
+			}
+			report += `\n`;
+
+			// Top 10 worst files (actionable)
+			report += `## Top 10 Files Needing Attention\n\n`;
+			report += `These files have the lowest maintainability scores:\n\n`;
+			for (let i = 0; i < Math.min(10, sorted.length); i++) {
+				const f = sorted[i];
+				const relPath = path.relative(targetPath, f.filePath);
+				const warnings: string[] = [];
+
+				if (f.maintainabilityIndex < 20) warnings.push("Critical: MI < 20");
+				else if (f.maintainabilityIndex < 40) warnings.push("Low: MI < 40");
+				if (f.cognitiveComplexity > 50) warnings.push(`High cognitive (${f.cognitiveComplexity})`);
+				if (f.maxNestingDepth > 5) warnings.push(`Deep nesting (${f.maxNestingDepth})`);
+				if (f.maxFunctionLength > 50) warnings.push(`Long functions (max ${f.maxFunctionLength})`);
+
+				report += `${i + 1}. **${relPath}** — MI: ${f.maintainabilityIndex.toFixed(1)}\n`;
+				if (warnings.length > 0) {
+					report += `   - ${warnings.join(", ")}\n`;
+				}
+			}
+			report += `\n`;
+
+			// Save report
+			if (!fs.existsSync(reviewDir)) {
+				fs.mkdirSync(reviewDir, { recursive: true });
+			}
+
+			const reportPath = path.join(reviewDir, `metrics-${timestamp}.md`);
+			fs.writeFileSync(reportPath, report, "utf-8");
+
+			// Also save latest.md for easy access
+			const latestPath = path.join(reviewDir, "latest.md");
+			fs.writeFileSync(latestPath, report, "utf-8");
+
+			// Console summary
+			const summary = [
+				`📊 Metrics Report`,
+				`   ${results.length} files, ${totalLOC.toLocaleString()} LOC, ${totalFunctions} functions`,
+				`   MI: ${avgMI.toFixed(1)} avg (${gradeCount.A}A ${gradeCount.B}B ${gradeCount.C}C ${gradeCount.D}D ${gradeCount.F}F)`,
+				`   Cognitive: ${avgCognitive.toFixed(1)} avg, ${maxCognitive} max`,
+				`📄 Saved: ${reportPath}`,
+			].join("\n");
+
+			ctx.ui.notify(summary, "info");
+		},
+	});
+
 	pi.registerCommand("lens-format", {
 		description:
 			"Apply Biome formatting to files. Usage: /lens-format [file-path] or /lens-format --all",
