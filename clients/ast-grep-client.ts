@@ -201,6 +201,103 @@ export class AstGrepClient {
   }
 
   /**
+   * Find similar functions by comparing normalized AST structure
+   */
+  async findSimilarFunctions(dir: string, lang: string = "typescript"): Promise<Array<{ pattern: string; functions: Array<{ name: string; file: string; line: number }> }>> {
+    if (!this.isAvailable()) return [];
+
+    const tmpDir = require("node:os").tmpdir();
+    const ts = Date.now();
+    const ruleDir = require("node:path").join(tmpDir, `pi-lens-similar-${ts}`);
+    const rulesSubdir = require("node:path").join(ruleDir, "rules");
+    const ruleFile = require("node:path").join(rulesSubdir, "find-functions.yml");
+    const configFile = require("node:path").join(ruleDir, ".sgconfig.yml");
+
+    require("node:fs").mkdirSync(rulesSubdir, { recursive: true });
+    require("node:fs").writeFileSync(configFile, `ruleDirs:\n  - ./rules\n`);
+    require("node:fs").writeFileSync(ruleFile, `id: find-functions
+language: ${lang}
+rule:
+  kind: function_declaration
+severity: info
+message: found
+`);
+
+    try {
+      const result = spawnSync("npx", [
+        "sg", "scan",
+        "--config", configFile,
+        "--json",
+        dir,
+      ], {
+        encoding: "utf-8",
+        timeout: 30000,
+        shell: true,
+      });
+
+      const output = result.stdout || result.stderr || "";
+      if (!output.trim()) return [];
+
+      const items = JSON.parse(output);
+      const matches = Array.isArray(items) ? items : [items];
+
+      // Normalize each function by removing identifiers
+      const normalized = new Map<string, Array<{ name: string; file: string; line: number }>>();
+
+      for (const item of matches) {
+        const text = item.text || "";
+        const nameMatch = text.match(/function\s+(\w+)/);
+        if (!nameMatch || !nameMatch[1]) continue;
+
+        // Normalize by replacing function name with FN, parameters with P1..Pn, and removing specific values
+        let normalizedText = text
+          .replace(/function\s+\w+/, "function FN")
+          .replace(/\bconst\b|\blet\b|\bvar\b/g, "VAR")
+          .replace(/["'].*?["']/g, "STR")
+          .replace(/`[^`]*`/g, "TMPL")
+          .replace(/\b\d+\b/g, "NUM")
+          .replace(/\btrue\b|\bfalse\b/g, "BOOL")
+          .replace(/\/\/.*/g, "")
+          .replace(/\/\*[\s\S]*?\*\//g, "")
+          .replace(/\s+/g, " ")
+          .trim();
+
+        // Extract just the body structure
+        const bodyMatch = normalizedText.match(/\{(.*)\}/);
+        const body = bodyMatch ? bodyMatch[1].trim() : normalizedText;
+
+        // Use first 200 chars as signature
+        const signature = body.slice(0, 200);
+
+        if (!normalized.has(signature)) {
+          normalized.set(signature, []);
+        }
+
+        const line = item.range?.start?.line || item.labels?.[0]?.range?.start?.line || 0;
+        normalized.get(signature)!.push({
+          name: nameMatch[1],
+          file: item.file,
+          line: line + 1,
+        });
+      }
+
+      // Return groups with more than one function
+      const result_groups: Array<{ pattern: string; functions: Array<{ name: string; file: string; line: number }> }> = [];
+      for (const [pattern, functions] of normalized) {
+        if (functions.length > 1) {
+          result_groups.push({ pattern, functions });
+        }
+      }
+
+      return result_groups;
+    } catch {
+      return [];
+    } finally {
+      try { require("node:fs").rmSync(ruleDir, { recursive: true, force: true }); } catch {}
+    }
+  }
+
+  /**
    * Scan for exported function names in a directory
    */
   async scanExports(dir: string, lang: string = "typescript"): Promise<Map<string, string>> {

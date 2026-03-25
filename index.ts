@@ -286,7 +286,25 @@ export default function (pi: ExtensionAPI) {
 				}
 			}
 
-			// Part 2: Complexity metrics
+			// Part 2: Similar functions (advanced duplicate detection)
+			if (astGrepClient.isAvailable()) {
+				const similarGroups = await astGrepClient.findSimilarFunctions(targetPath, "typescript");
+				if (similarGroups.length > 0) {
+					let report = `[Similar Functions] ${similarGroups.length} group(s) of structurally similar functions:\n`;
+					for (const group of similarGroups.slice(0, 5)) {
+						report += `  Pattern: ${group.functions.map(f => f.name).join(", ")}\n`;
+						for (const fn of group.functions) {
+							report += `    ${fn.name} (${path.basename(fn.file)}:${fn.line})\n`;
+						}
+					}
+					if (similarGroups.length > 5) {
+						report += `  ... and ${similarGroups.length - 5} more groups\n`;
+					}
+					parts.push(report);
+				}
+			}
+
+			// Part 3: Complexity metrics
 			const results: import("./clients/complexity-client.js").FileComplexity[] = [];
 
 			const scanDir = (dir: string) => {
