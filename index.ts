@@ -215,9 +215,9 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	pi.registerCommand("lens-review", {
+	pi.registerCommand("lens-booboo", {
 		description:
-			"Code review: design smells + complexity metrics. Usage: /lens-review [path]",
+			"Code review: design smells + complexity metrics. Usage: /lens-booboo [path]",
 		handler: async (args, ctx) => {
 			const targetPath = args.trim() || ctx.cwd || process.cwd();
 			ctx.ui.notify("🔍 Running code review...", "info");

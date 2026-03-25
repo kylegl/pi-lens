@@ -73,7 +73,7 @@ Example:
 | `/lens-dead-code` | Find unused exports/files/dependencies (requires knip) |
 | `/lens-deps` | Circular dependency scan (requires madge) |
 | `/lens-format [file\|--all]` | Apply Biome formatting |
-| `/lens-review [path]` | Code review: design smells + complexity metrics |
+| `/lens-booboo [path]` | Code review: design smells + complexity metrics |
 
 ### On-demand tools
 
