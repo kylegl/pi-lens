@@ -621,6 +621,8 @@ export class TestRunnerClient {
       output += `  ... and ${result.failures.length - 5} more failure(s)\n`;
     }
 
+    output += `  → Fix failing tests before proceeding\n`;
+
     return output.trimEnd();
   }
 

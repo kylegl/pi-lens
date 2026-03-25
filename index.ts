@@ -889,6 +889,7 @@ export default function (pi: ExtensionAPI) {
 				if (fileClones.length > 3) {
 					dupReport += `  ... and ${fileClones.length - 3} more\n`;
 				}
+				dupReport += `  → Extract duplicated code to a shared utility function\n`;
 				lspOutput += `\n\n${dupReport}`;
 			}
 		}
@@ -912,6 +913,7 @@ export default function (pi: ExtensionAPI) {
 					for (const dupe of dupes.slice(0, 5)) {
 						exportReport += `  ${dupe}\n`;
 					}
+					exportReport += `  → Import the existing function instead of redefining it\n`;
 					lspOutput += `\n\n${exportReport}`;
 				}
 				// Update cache with new exports

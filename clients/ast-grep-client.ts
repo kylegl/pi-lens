@@ -477,8 +477,8 @@ message: found
       const fix = d.fix || d.ruleDescription?.note ? " [fixable]" : "";
       output += `  ${ruleInfo} (${loc})${fix}\n`;
 
-      // Include note for errors to provide fix guidance
-      if (d.severity === "error" && d.ruleDescription?.note) {
+      // Include note for actionable guidance
+      if (d.ruleDescription?.note) {
         const shortNote = d.ruleDescription.note.split("\n")[0];
         output += `    → ${shortNote}\n`;
       }
