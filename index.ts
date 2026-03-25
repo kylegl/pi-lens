@@ -1103,18 +1103,26 @@ export default function (pi: ExtensionAPI) {
 				const otherDiags = diags.filter(d => d.code !== 6133 && d.code !== 6196);
 
 				if (unusedImports.length > 0) {
-					lspOutput += `\n\n[Unused Imports] ${unusedImports.length} imported but never used:\n`;
+					lspOutput += `\n\n🧹 Remove ${unusedImports.length} unused import(s) — they are dead code:\n`;
 					for (const d of unusedImports.slice(0, 10)) {
 						lspOutput += `  L${d.range.start.line + 1}: ${d.message}\n`;
 					}
-					lspOutput += `  → Remove unused imports to reduce noise\n`;
 				}
 
 				if (otherDiags.length > 0) {
-					lspOutput += `\n\n[TypeScript] ${otherDiags.length} issue(s):\n`;
-					for (const d of otherDiags.slice(0, 10)) {
-						const label = d.severity === 2 ? "Warning" : "Error";
-						lspOutput += `  [${label}] L${d.range.start.line + 1}: ${d.message}\n`;
+					const errors = otherDiags.filter(d => d.severity !== 2);
+					const warnings = otherDiags.filter(d => d.severity === 2);
+					if (errors.length > 0) {
+						lspOutput += `\n\n🔴 Fix ${errors.length} TypeScript error(s) — these must be resolved:\n`;
+						for (const d of errors.slice(0, 10)) {
+							lspOutput += `  L${d.range.start.line + 1}: ${d.message}\n`;
+						}
+					}
+					if (warnings.length > 0) {
+						lspOutput += `\n\n🟡 ${warnings.length} TypeScript warning(s) — address before moving on:\n`;
+						for (const d of warnings.slice(0, 10)) {
+							lspOutput += `  L${d.range.start.line + 1}: ${d.message}\n`;
+						}
 					}
 				}
 			}
@@ -1157,10 +1165,10 @@ export default function (pi: ExtensionAPI) {
 				}
 			} else {
 				if (diags.length > 0)
-					lspOutput += `\n\n${ruffClient.formatDiagnostics(diags)}`;
+					lspOutput += `\n\n🟠 Fix ${diags.length} Ruff issue(s):\n${ruffClient.formatDiagnostics(diags)}`;
 				if (fmtReport) lspOutput += `\n\n${fmtReport}`;
 				if (fixable.length > 0 || hasFormatIssues) {
-					lspOutput += `\n\n[Ruff] ${fixable.length} fixable — enable --autofix-ruff flag to auto-fix`;
+					lspOutput += `\n  → Enable --autofix-ruff to auto-fix ${fixable.length} of these on every write`;
 				}
 			}
 		}
@@ -1195,17 +1203,16 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			if (newViolations.length > 0) {
-				lspOutput += `\n\n[ast-grep] +${newViolations.length} new issue(s) introduced:\n`;
+				const hasFixable = newViolations.some(v => v.fix);
+				lspOutput += `\n\n🔴 You introduced ${newViolations.length} new structural violation(s) — fix before moving on:\n`;
 				lspOutput += astGrepClient.formatDiagnostics(newViolations);
+				if (hasFixable) lspOutput += `\n  Some are fixable — check the → hints above`;
 			}
 			if (fixedRules.length > 0) {
-				lspOutput += `\n\n[ast-grep] ✓ Fixed: ${fixedRules.join(", ")}`;
+				lspOutput += `\n\n✅ ast-grep: fixed ${fixedRules.join(", ")}`;
 			}
-			// Show total count quietly so context isn't lost
-			if (after.length > 0 && newViolations.length === 0 && fixedRules.length === 0) {
-				// no change — show nothing
-			} else if (after.length > 0) {
-				lspOutput += `\n  (${after.length} total)`;
+			if (after.length > 0 && newViolations.length > 0) {
+				lspOutput += `\n  (${after.length} total remaining)`;
 			}
 		}
 
@@ -1253,17 +1260,15 @@ export default function (pi: ExtensionAPI) {
 			} else {
 				if (newDiags.length > 0) {
 					const fixable = newDiags.filter((d) => d.fixable);
-					lspOutput += `\n\n[Biome] +${newDiags.length} new issue(s) introduced:\n`;
+					lspOutput += `\n\n🟠 You introduced ${newDiags.length} new Biome violation(s) — fix before moving on:\n`;
 					lspOutput += biomeClient.formatDiagnostics(newDiags, filePath);
-					if (fixable.length > 0) lspOutput += `\n\n[Biome] ${fixable.length} fixable — run /lens-format`;
+					if (fixable.length > 0) lspOutput += `\n  → Run /lens-format to auto-fix ${fixable.length} of these`;
 				}
 				if (fixedRules.length > 0) {
-					lspOutput += `\n\n[Biome] ✓ Fixed: ${fixedRules.join(", ")}`;
+					lspOutput += `\n\n✅ Biome: fixed ${fixedRules.join(", ")}`;
 				}
-				if (after.length > 0 && newDiags.length === 0 && fixedRules.length === 0) {
-					// no change — show nothing
-				} else if (after.length > 0) {
-					lspOutput += `\n  (${after.length} total)`;
+				if (after.length > 0 && newDiags.length > 0) {
+					lspOutput += `\n  (${after.length} total remaining)`;
 				}
 			}
 		}
@@ -1291,11 +1296,14 @@ export default function (pi: ExtensionAPI) {
 			if (metrics) {
 				const warnings = complexityClient.checkThresholds(metrics);
 				if (warnings.length > 0) {
-					let warningReport = `[Complexity Warnings]\n`;
-					for (const w of warnings) {
-						warningReport += `  ⚠ ${w}\n`;
+					const isTestFile = /\.(test|spec)\.[jt]sx?$/.test(filePath);
+					if (!isTestFile) {
+						let warningReport = `🟡 Complexity issues — refactor when you get a chance:\n`;
+						for (const w of warnings) {
+							warningReport += `  ⚠ ${w}\n`;
+						}
+						lspOutput += `\n\n${warningReport}`;
 					}
-					lspOutput += `\n\n${warningReport}`;
 				}
 			}
 		}
@@ -1335,17 +1343,16 @@ export default function (pi: ExtensionAPI) {
 			);
 			if (fileClones.length > 0) {
 				dbg(`  jscpd: ${fileClones.length} duplicate(s) involving ${filePath}`);
-				let dupReport = `[jscpd] ${fileClones.length} duplicate block(s) involving ${path.basename(filePath)}:\n`;
+				let dupReport = `🟠 This file has ${fileClones.length} duplicate block(s) — extract to shared utilities:\n`;
 				for (const clone of fileClones.slice(0, 3)) {
 					const other = path.resolve(clone.fileA) === path.resolve(filePath)
 						? `${path.basename(clone.fileB)}:${clone.startB}`
 						: `${path.basename(clone.fileA)}:${clone.startA}`;
-					dupReport += `  ${clone.lines} lines — ${other}\n`;
+					dupReport += `  ${clone.lines} lines duplicated with ${other}\n`;
 				}
 				if (fileClones.length > 3) {
 					dupReport += `  ... and ${fileClones.length - 3} more\n`;
 				}
-				dupReport += `  → Extract duplicated code to a shared utility function\n`;
 				lspOutput += `\n\n${dupReport}`;
 			}
 		}
@@ -1365,11 +1372,11 @@ export default function (pi: ExtensionAPI) {
 				}
 				if (dupes.length > 0) {
 					dbg(`  duplicate exports: ${dupes.length} found`);
-					let exportReport = `[Duplicate Exports] ${dupes.length} function(s) already exist:\n`;
+					let exportReport = `🔴 Do not redefine — ${dupes.length} function(s) already exist elsewhere:\n`;
 					for (const dupe of dupes.slice(0, 5)) {
 						exportReport += `  ${dupe}\n`;
 					}
-					exportReport += `  → Import the existing function instead of redefining it\n`;
+					exportReport += `  → Import the existing function instead\n`;
 					lspOutput += `\n\n${exportReport}`;
 				}
 				// Update cache with new exports
