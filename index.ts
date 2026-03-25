@@ -904,6 +904,10 @@ export default function (pi: ExtensionAPI) {
 	let cachedExports = new Map<string, string>(); // function name -> file path
 	const complexityBaselines: Map<string, import("./clients/complexity-client.js").FileComplexity> = new Map();
 
+	// Delta baselines: store pre-write diagnostics to diff against post-write
+	const astGrepBaselines = new Map<string, import("./clients/ast-grep-client.js").AstGrepDiagnostic[]>();
+	const biomeBaselines = new Map<string, import("./clients/biome-client.js").BiomeDiagnostic[]>();
+
 	// --- Events ---
 
 	pi.on("session_start", async (_event, ctx) => {
@@ -1055,11 +1059,17 @@ export default function (pi: ExtensionAPI) {
 
 		if (!pi.getFlag("no-ast-grep") && astGrepClient.isAvailable()) {
 			const diags = astGrepClient.scanFile(filePath);
+			astGrepBaselines.set(filePath, diags);
 			if (diags.length > 0) {
 				hints.push(
 					`⚠ Pre-write: file already has ${diags.length} structural violations`,
 				);
 			}
+		}
+
+		if (!pi.getFlag("no-biome") && biomeClient.isAvailable() && biomeClient.isSupportedFile(filePath)) {
+			const diags = biomeClient.checkFile(filePath).filter(d => d.category === "lint" || d.severity === "error");
+			biomeBaselines.set(filePath, diags);
 		}
 
 		dbg(`  pre-write hints: ${hints.length} — ${hints.join(" | ") || "none"}`);
@@ -1174,50 +1184,105 @@ export default function (pi: ExtensionAPI) {
 			}
 		}
 
-		// ast-grep structural analysis
-		const astAvailable = astGrepClient.isAvailable();
-		dbg(
-			`  ast-grep available: ${astAvailable}, no-ast-grep: ${pi.getFlag("no-ast-grep")}`,
-		);
-		if (!pi.getFlag("no-ast-grep") && astAvailable) {
-			const astDiags = astGrepClient.scanFile(filePath);
-			dbg(`  ast-grep diags: ${astDiags.length}`);
-			if (astDiags.length > 0) {
-				lspOutput += `\n\n${astGrepClient.formatDiagnostics(astDiags)}`;
+		// ast-grep structural analysis — delta mode (only show new violations)
+		if (!pi.getFlag("no-ast-grep") && astGrepClient.isAvailable()) {
+			const after = astGrepClient.scanFile(filePath);
+			const before = astGrepBaselines.get(filePath) ?? [];
+			astGrepBaselines.set(filePath, after);
+
+			// Count by rule before/after
+			const countBefore = new Map<string, number>();
+			const countAfter = new Map<string, number>();
+			for (const d of before) countBefore.set(d.rule, (countBefore.get(d.rule) ?? 0) + 1);
+			for (const d of after) countAfter.set(d.rule, (countAfter.get(d.rule) ?? 0) + 1);
+
+			// Find new/increased rules
+			const newViolations: typeof after = [];
+			for (const d of after) {
+				const ruleBefore = countBefore.get(d.rule) ?? 0;
+				const ruleAfter = countAfter.get(d.rule) ?? 0;
+				if (ruleAfter > ruleBefore && newViolations.filter(x => x.rule === d.rule).length < (ruleAfter - ruleBefore)) {
+					newViolations.push(d);
+				}
+			}
+
+			// Find fixed rules
+			const fixedRules: string[] = [];
+			for (const [rule, n] of countBefore) {
+				const after_n = countAfter.get(rule) ?? 0;
+				if (after_n < n) fixedRules.push(`${rule} (-${n - after_n})`);
+			}
+
+			if (newViolations.length > 0) {
+				lspOutput += `\n\n[ast-grep] +${newViolations.length} new issue(s) introduced:\n`;
+				lspOutput += astGrepClient.formatDiagnostics(newViolations);
+			}
+			if (fixedRules.length > 0) {
+				lspOutput += `\n\n[ast-grep] ✓ Fixed: ${fixedRules.join(", ")}`;
+			}
+			// Show total count quietly so context isn't lost
+			if (after.length > 0 && newViolations.length === 0 && fixedRules.length === 0) {
+				// no change — show nothing
+			} else if (after.length > 0) {
+				lspOutput += `\n  (${after.length} total)`;
 			}
 		}
 
-		// Biome: lint only (formatting noise filtered out, use /lens-format)
+		// Biome: lint only — delta mode
 		const biomeAvailable = biomeClient.isAvailable();
-		dbg(
-			`  biome available: ${biomeAvailable}, supported: ${biomeClient.isSupportedFile(filePath)}, no-biome: ${pi.getFlag("no-biome")}`,
-		);
-		if (!pi.getFlag("no-biome") && biomeClient.isSupportedFile(filePath)) {
-			const biomeDiags = biomeClient.checkFile(filePath);
-			// Filter out format-only issues (noise for agent, use /lens-format)
-			const lintDiags = biomeDiags.filter((d) => d.category === "lint" || d.severity === "error");
-			dbg(`  biome diags: ${biomeDiags.length} total, ${lintDiags.length} lint-only`);
-			if (pi.getFlag("autofix-biome") && lintDiags.length > 0) {
-				// Always attempt fix — let Biome decide what it can do
+		if (!pi.getFlag("no-biome") && biomeAvailable && biomeClient.isSupportedFile(filePath)) {
+			const allDiags = biomeClient.checkFile(filePath);
+			const after = allDiags.filter((d) => d.category === "lint" || d.severity === "error");
+			const before = biomeBaselines.get(filePath) ?? [];
+			biomeBaselines.set(filePath, after);
+
+			// Count by rule before/after
+			const countBefore = new Map<string, number>();
+			const countAfter = new Map<string, number>();
+			const ruleKey = (d: typeof after[0]) => d.rule ?? d.message;
+			for (const d of before) countBefore.set(ruleKey(d), (countBefore.get(ruleKey(d)) ?? 0) + 1);
+			for (const d of after) countAfter.set(ruleKey(d), (countAfter.get(ruleKey(d)) ?? 0) + 1);
+
+			const newDiags: typeof after = [];
+			for (const d of after) {
+				const key = ruleKey(d);
+				const n_before = countBefore.get(key) ?? 0;
+				const n_after = countAfter.get(key) ?? 0;
+				if (n_after > n_before && newDiags.filter(x => ruleKey(x) === key).length < (n_after - n_before)) {
+					newDiags.push(d);
+				}
+			}
+
+			const fixedRules: string[] = [];
+			for (const [rule, n] of countBefore) {
+				const after_n = countAfter.get(rule) ?? 0;
+				if (after_n < n) fixedRules.push(`${rule} (-${n - after_n})`);
+			}
+
+			if (pi.getFlag("autofix-biome") && after.length > 0) {
 				const fixResult = biomeClient.fixFile(filePath);
 				if (fixResult.success && fixResult.changed) {
 					lspOutput += `\n\n[Biome] Auto-fixed ${fixResult.fixed} issue(s) — file updated on disk`;
-					const remaining = biomeClient.checkFile(filePath);
-					const remainingLint = remaining.filter((d) => d.category === "lint" || d.severity === "error");
-					if (remainingLint.length > 0) {
-						lspOutput += `\n\n${biomeClient.formatDiagnostics(remainingLint, filePath)}`;
-					} else {
-						lspOutput += `\n\n[Biome] ✓ All issues resolved`;
-					}
-				} else {
-					// Nothing fixable — show diagnostics as-is
-					lspOutput += `\n\n${biomeClient.formatDiagnostics(lintDiags, filePath)}`;
+					const remaining = biomeClient.checkFile(filePath).filter((d) => d.category === "lint" || d.severity === "error");
+					if (remaining.length > 0) lspOutput += `\n\n${biomeClient.formatDiagnostics(remaining, filePath)}`;
+					else lspOutput += `\n\n[Biome] ✓ All issues resolved`;
+				} else if (after.length > 0) {
+					lspOutput += `\n\n${biomeClient.formatDiagnostics(after, filePath)}`;
 				}
-			} else if (lintDiags.length > 0) {
-				const fixable = lintDiags.filter((d) => d.fixable);
-				lspOutput += `\n\n${biomeClient.formatDiagnostics(lintDiags, filePath)}`;
-				if (fixable.length > 0) {
-					lspOutput += `\n\n[Biome] ${fixable.length} fixable — enable --autofix-biome flag or run /lens-format`;
+			} else {
+				if (newDiags.length > 0) {
+					const fixable = newDiags.filter((d) => d.fixable);
+					lspOutput += `\n\n[Biome] +${newDiags.length} new issue(s) introduced:\n`;
+					lspOutput += biomeClient.formatDiagnostics(newDiags, filePath);
+					if (fixable.length > 0) lspOutput += `\n\n[Biome] ${fixable.length} fixable — run /lens-format`;
+				}
+				if (fixedRules.length > 0) {
+					lspOutput += `\n\n[Biome] ✓ Fixed: ${fixedRules.join(", ")}`;
+				}
+				if (after.length > 0 && newDiags.length === 0 && fixedRules.length === 0) {
+					// no change — show nothing
+				} else if (after.length > 0) {
+					lspOutput += `\n  (${after.length} total)`;
 				}
 			}
 		}
