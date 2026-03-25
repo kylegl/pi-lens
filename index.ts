@@ -1262,7 +1262,7 @@ export default function (pi: ExtensionAPI) {
 					const fixable = newDiags.filter((d) => d.fixable);
 					lspOutput += `\n\n🟠 You introduced ${newDiags.length} new Biome violation(s) — fix before moving on:\n`;
 					lspOutput += biomeClient.formatDiagnostics(newDiags, filePath);
-					if (fixable.length > 0) lspOutput += `\n  → Run /lens-format to auto-fix ${fixable.length} of these`;
+					if (fixable.length > 0) lspOutput += `\n  → Auto-fixable: \`npx @biomejs/biome check --write ${path.basename(filePath)}\``;
 				}
 				if (fixedRules.length > 0) {
 					lspOutput += `\n\n✅ Biome: fixed ${fixedRules.join(", ")}`;
