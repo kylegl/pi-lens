@@ -617,10 +617,18 @@ export default function (pi: ExtensionAPI) {
 
 			ctx.ui.notify("🔧 Running booboo fix loop...", "info");
 
+			const MAX_ITERATIONS = 3;
+
 			// Load session state
 			let session: { iteration: number; counts: Record<string, number> } = { iteration: 0, counts: {} };
 			try { if (fs.existsSync(sessionFile)) session = JSON.parse(fs.readFileSync(sessionFile, "utf-8")); } catch (e) { dbg(`fix-session load failed: ${e}`); }
 			session.iteration++;
+
+			// Hard stop at max iterations
+			if (session.iteration > MAX_ITERATIONS) {
+				ctx.ui.notify(`⛔ Max iterations (${MAX_ITERATIONS}) reached. Run /lens-booboo for full remaining report, or delete .pi-lens/fix-session.json to reset.`, "warning");
+				return;
+			}
 			const prevCounts = { ...session.counts };
 
 			// --- Step 1: Auto-fix with Biome ---
@@ -765,7 +773,7 @@ export default function (pi: ExtensionAPI) {
 
 			// --- Build the fix plan message ---
 			const lines: string[] = [];
-			lines.push(`📋 BOOBOO FIX PLAN — Iteration ${session.iteration} (${totalFixable} fixable items remaining)`);
+			lines.push(`📋 BOOBOO FIX PLAN — Iteration ${session.iteration}/${MAX_ITERATIONS} (${totalFixable} fixable items remaining)`);
 			if (deltaLine) lines.push(deltaLine);
 			lines.push("");
 
