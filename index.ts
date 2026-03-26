@@ -582,6 +582,10 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			// Part 9: Architectural Rules
+			// Reload config in case it was added after session start
+			if (!architectClient.hasConfig()) {
+				architectClient.loadConfig(projectRoot);
+			}
 			if (architectClient.hasConfig()) {
 				const archViolations: Array<{ file: string; message: string }> = [];
 				const archScanDir = (dir: string) => {

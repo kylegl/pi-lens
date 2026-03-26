@@ -1,0 +1,144 @@
+# .pi-lens/architect.yaml
+# Architectural rules for your project
+# Copy to your project root as .pi-lens/architect.yaml and customize.
+#
+# Structure is language-agnostic — regex patterns in must_not are language-specific.
+# Adapt patterns for your stack (JS/TS, Python, Go, Rust, etc.)
+
+version: "1.0"
+
+# =============================================================================
+# LANGUAGE-AGNOSTIC RULES (apply to all projects)
+# =============================================================================
+
+rules:
+  # --- File size limit (all languages) ---
+  - pattern: "**/*.{ts,tsx,js,jsx,py,go,rs}"
+    max_lines: 750
+    must:
+      - "Keep files focused on a single responsibility"
+
+  # --- No hardcoded secrets (all languages) ---
+  - pattern: "**/*.{ts,tsx,js,jsx,py,go,rs}"
+    must_not:
+      - pattern: '(?:password|secret|api_?key|token|private_?key)\s*[:=]\s*["\'][^"\']{8,}["\']'
+        message: "No hardcoded secrets — use environment variables or a secrets manager"
+      - pattern: '(?:sk|pk)_[a-zA-Z0-9]{20,}'
+        message: "Hardcoded API key detected — use environment variables"
+
+  # --- No dead code ---
+  - pattern: "**/*.{ts,tsx,js,jsx}"
+    must_not:
+      - pattern: '^\s*//\s*(?:TODO|FIXME|HACK|XXX).*(?:later|tomorrow|eventually)'
+        message: "Deferred TODOs without context are debt — create an issue or fix now"
+
+  # =============================================================================
+  # JS/TS-SPECIFIC RULES (remove or adapt for other languages)
+  # =============================================================================
+
+  # --- Routes / Controllers ---
+  # Entry points should delegate, not implement
+  - pattern: "**/routes/**/*.{ts,tsx,js,jsx}"
+    must_not:
+      - pattern: 'import.*from.*["\'](?:models|db|database|prisma|typeorm|mongoose)'
+        message: "Routes must not access database directly — use a service or repository"
+      - pattern: 'import.*from.*["\'](?:bcrypt|jsonwebtoken|argon2)'
+        message: "Routes must not handle auth directly — use an auth middleware/service"
+      - pattern: 'console\.log'
+        message: "Routes should use a logger, not console.log"
+    must:
+      - "Keep route handlers thin — delegate to services"
+
+  # --- Services ---
+  # Services contain business logic, no framework coupling
+  - pattern: "**/services/**/*.{ts,tsx,js,jsx}"
+    must_not:
+      - pattern: 'import.*from.*["\'](?:express|fastify|koa|hono)'
+        message: "Services must be framework-agnostic — no HTTP framework imports"
+      - pattern: 'import.*from.*["\'](?:react|vue|svelte)'
+        message: "Services must not import UI framework code"
+      - pattern: 'console\.log'
+        message: "Services should use a logger, not console.log"
+    must:
+      - "Use dependency injection for testability"
+
+  # --- UI / Components ---
+  - pattern: "**/components/**/*.{tsx,jsx}"
+    must_not:
+      - pattern: 'import.*from.*["\'](?:models|db|database|prisma)'
+        message: "Components must not access database — use a data-fetching layer"
+      - pattern: 'process\.env'
+        message: "Components must not read env vars directly — use config"
+    must:
+      - "Handle loading and error states"
+
+  # --- Tests ---
+  - pattern: "**/*.test.{ts,tsx,js,jsx}"
+    must_not:
+      - pattern: 'import.*from.*["\'](?:\.\./)*src/(config|secrets|env)'
+        message: "Tests must not import real config/secrets — use mocks"
+
+  # =============================================================================
+  # PYTHON-SPECIFIC RULES (remove if not using Python)
+  # =============================================================================
+
+  # --- Django/Flask views (Python equivalent of routes) ---
+  - pattern: "**/views/**/*.py"
+    must_not:
+      - pattern: 'from\s+(?:models|db|database)\s+import'
+        message: "Views must not import models directly — use a service layer"
+      - pattern: 'from\s+django\.contrib\.auth\.hashers\s+import'
+        message: "Views must not handle password hashing — use a service"
+    must:
+      - "Keep view functions thin — delegate to services"
+
+  # --- Python services ---
+  - pattern: "**/services/**/*.py"
+    must_not:
+      - pattern: 'from\s+flask\s+import|from\s+fastapi\s+import'
+        message: "Services must be framework-agnostic — no web framework imports"
+      - pattern: 'print\('
+        message: "Services should use logging, not print()"
+    must:
+      - "Use Protocol or ABC for interface definitions"
+      - "Accept dependencies via constructor (dependency injection)"
+
+  # --- Django/Flask models ---
+  - pattern: "**/models/**/*.py"
+    must_not:
+      - pattern: 'from\s+(?:flask|fastapi|django\.http)\s+import'
+        message: "Models must not import web framework code"
+      - pattern: 'requests\.(get|post|put|delete)'
+        message: "Models must not make HTTP calls"
+    must:
+      - "Be pure data definitions"
+
+  # --- Python config ---
+  - pattern: "**/config/**/*.py"
+    must_not:
+      - pattern: '(?:PASSWORD|SECRET|API_KEY|TOKEN)\s*=\s*["\'][^"\']{8,}["\']'
+        message: "No hardcoded secrets — use os.environ or pydantic-settings"
+    must:
+      - "Validate required env vars at startup (fail fast)"
+
+  # =============================================================================
+  # GO-SPECIFIC RULES (remove if not using Go)
+  # =============================================================================
+
+  # --- Go handlers (HTTP entry points) ---
+  - pattern: "**/handlers/**/*.go"
+    must_not:
+      - pattern: 'import.*"database/sql"'
+        message: "Handlers must not import database drivers directly — use repository interface"
+    must:
+      - "Keep handler functions under 50 lines"
+      - "Return typed errors, not generic errors"
+
+  # --- Go services ---
+  - pattern: "**/services/**/*.go"
+    must_not:
+      - pattern: 'import.*"net/http"'
+        message: "Services should not import HTTP handlers — separate concerns"
+    must:
+      - "Accept interfaces, return concrete types"
+      - "Define interfaces at the consumer, not the provider"

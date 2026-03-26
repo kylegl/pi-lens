@@ -502,6 +502,10 @@ export default function (pi) {
                 }
             }
             // Part 9: Architectural Rules
+            // Reload config in case it was added after session start
+            if (!architectClient.hasConfig()) {
+                architectClient.loadConfig(projectRoot);
+            }
             if (architectClient.hasConfig()) {
                 const archViolations = [];
                 const archScanDir = (dir) => {
