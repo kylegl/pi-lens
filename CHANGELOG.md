@@ -2,6 +2,31 @@
 
 All notable changes to pi-lens will be documented in this file.
 
+## [2.0.27] - 2026-03-26
+
+### Added
+- **`switch-exhaustiveness` check**: New type safety rule detects missing cases in union type switches. Uses TypeScript compiler API for type-aware analysis. Reports as inline blocker: `🔴 STOP — Switch on 'X' is not exhaustive. Missing cases: 'Y'`.
+- **`clients/type-safety-client.ts`**: New client for type safety checks. Extensible for future checks (null safety, exhaustive type guards).
+
+### Changed
+- **Type safety violations added to inline feedback**: Missing switch cases now block the agent mid-task, same as TypeScript errors.
+- **Type safety violations in `/lens-booboo-fix`**: Marked as agent-fixable (add missing case or default clause).
+
+## [2.0.26] - 2026-03-26
+
+### Added
+- **5 new ast-grep rules** for AI slop detection:
+  - `no-process-env`: Block direct `process.env` access (use DI or config module) — error level
+  - `no-param-reassign`: Detect function parameter reassignment — warning level
+  - `no-single-char-var`: Flag single-character variable names — info level
+  - `switch-without-default`: Ensure switch statements have default case — warning level
+  - `no-architecture-violation`: Block cross-layer imports (models/db) — error level
+
+### Changed
+- **RULE_ACTIONS updated** for new rules:
+  - `agent` type (inline + booboo-fix): `no-param-reassign`, `switch-without-default`, `switch-exhaustiveness`
+  - `skip` type (booboo-refactor only): `no-process-env`, `no-single-char-var`, `no-architecture-violation`
+
 ## [2.0.24] - 2026-03-26
 
 ### Changed

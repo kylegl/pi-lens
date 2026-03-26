@@ -202,10 +202,16 @@ Each rule includes a `message` and `note` that are shown in diagnostics, so the 
 `no-debugger`, `no-throw-string`, `no-return-await`, `no-await-in-loop`, `no-await-in-promise-all`, `require-await`, `empty-catch`, `strict-equality`, `strict-inequality`
 
 **Patterns**
-`no-console-log`, `no-alert`, `no-delete-operator`, `no-shadow`, `no-star-imports`, `switch-needs-default`
+`no-console-log`, `no-alert`, `no-delete-operator`, `no-shadow`, `no-star-imports`, `switch-needs-default`, `switch-without-default`
+
+**Type Safety** (type-aware checks via `type-safety-client.ts`)
+`switch-exhaustiveness` — detects missing cases in union type switches (inline blocker)
 
 **Design Smells**
 `long-method`, `long-parameter-list`, `large-class`
+
+**AI Slop Detection**
+`no-param-reassign`, `no-single-char-var`, `no-process-env`, `no-architecture-violation`
 
 ---
 
