@@ -16,9 +16,6 @@
  *
  * On-demand commands:
  * - /lens-format - Apply Biome formatting
- * - /lens-todos - Scan for TODO/FIXME/HACK annotations
- * - /lens-dead-code - Find unused exports/dependencies (requires knip)
- * - /lens-deps - Full circular dependency scan (requires madge)
  *
  * External dependencies:
  * - npm: @biomejs/biome, @ast-grep/cli, knip, madge
@@ -152,68 +149,6 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// --- Commands ---
-
-	pi.registerCommand("lens-todos", {
-		description:
-			"Scan for TODO/FIXME/HACK annotations. Usage: /lens-todos [path]",
-		handler: async (args, ctx) => {
-			const targetPath = args.trim() || ctx.cwd || process.cwd();
-			ctx.ui.notify("🔍 Scanning for TODOs...", "info");
-
-			const result = todoScanner.scanDirectory(targetPath);
-			const report = todoScanner.formatResult(result);
-
-			if (report) {
-				ctx.ui.notify(report, "info");
-			} else {
-				ctx.ui.notify("✓ No TODOs found", "info");
-			}
-		},
-	});
-
-	pi.registerCommand("lens-dead-code", {
-		description:
-			"Check for unused exports, files, and dependencies. Usage: /lens-dead-code [path]",
-		handler: async (args, ctx) => {
-			if (!knipClient.isAvailable()) {
-				ctx.ui.notify("Knip not installed. Run: npm install -D knip", "error");
-				return;
-			}
-
-			ctx.ui.notify("🔍 Analyzing for dead code...", "info");
-			const result = knipClient.analyze(args.trim() || ctx.cwd);
-			const report = knipClient.formatResult(result);
-
-			if (report) {
-				ctx.ui.notify(report, "info");
-			} else {
-				ctx.ui.notify("✓ No dead code found", "info");
-			}
-		},
-	});
-
-	pi.registerCommand("lens-deps", {
-		description: "Check for circular dependencies. Usage: /lens-deps [path]",
-		handler: async (args, ctx) => {
-			if (!depChecker.isAvailable()) {
-				ctx.ui.notify(
-					"Madge not installed. Run: npm install -D madge",
-					"error",
-				);
-				return;
-			}
-
-			ctx.ui.notify("🔍 Scanning dependencies...", "info");
-			const { circular } = depChecker.scanProject(args.trim() || ctx.cwd);
-			const report = depChecker.formatScanResult(circular);
-
-			if (report) {
-				ctx.ui.notify(report, "warning");
-			} else {
-				ctx.ui.notify("✓ No circular dependencies found", "info");
-			}
-		},
-	});
 
 	pi.registerCommand("lens-booboo", {
 		description:
@@ -612,6 +547,22 @@ export default function (pi: ExtensionAPI) {
 						for (const u of tcResult.untypedLocations) {
 							fullSection += `| ${u.file} | ${u.line} | ${u.column} | ${u.name} |\n`;
 						}
+					}
+					fullSection += "\n";
+					fullReport.push(fullSection);
+				}
+			}
+
+			// Part 8: Circular dependencies
+			if (!pi.getFlag("no-madge") && depChecker.isAvailable()) {
+				const { circular } = depChecker.scanProject(targetPath);
+				const depReport = depChecker.formatScanResult(circular);
+				if (depReport) {
+					parts.push(depReport);
+					let fullSection = `## Circular Dependencies (Madge)\n\n`;
+					fullSection += `**${circular.length} circular chain(s) found**\n\n`;
+					for (const dep of circular) {
+						fullSection += `- ${dep.path.join(" → ")}\n`;
 					}
 					fullSection += "\n";
 					fullReport.push(fullSection);
@@ -1569,9 +1520,6 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	// Delivered once into the first tool_result of the session, then cleared
-	let sessionSummary: string | null = null;
-	let sessionMetricsShown = false;
 	let cachedJscpdClones: import("./clients/jscpd-client.js").DuplicateClone[] =
 		[];
 	const cachedExports = new Map<string, string>(); // function name -> file path
@@ -1597,7 +1545,6 @@ export default function (pi: ExtensionAPI) {
 		dbg("session_start fired");
 
 		// Reset session state
-		sessionMetricsShown = false;
 		metricsClient.reset();
 		complexityBaselines.clear();
 
@@ -1676,12 +1623,7 @@ export default function (pi: ExtensionAPI) {
 			}
 		}
 
-		if (parts.length > 0) {
-			sessionSummary = `[Session Start]\n${parts.join("\n\n")}`;
-			dbg(`session_start summary queued (${parts.length} parts)`);
-		} else {
-			dbg(`session_start: no parts, no summary`);
-		}
+		dbg(`session_start: scans complete (${parts.length} part(s)), cached for commands`);
 	});
 
 	// --- Pre-write proactive hints ---
@@ -1772,10 +1714,6 @@ export default function (pi: ExtensionAPI) {
 			`  __dirname: ${typeof __dirname !== "undefined" ? __dirname : "undefined"}`,
 		);
 
-		// Deliver session-start summary (TODOs, dead code) once into the first tool_result
-		const sessionDump = sessionSummary;
-		sessionSummary = null;
-
 		// Prepend any pre-write hints collected during tool_call
 		const preHint = preWriteHints.get(filePath);
 		preWriteHints.delete(filePath);
@@ -1789,8 +1727,7 @@ export default function (pi: ExtensionAPI) {
 			void err;
 		}
 
-		let lspOutput = sessionDump ? `\n\n${sessionDump}` : "";
-		if (preHint) lspOutput += `\n\n${preHint}`;
+		let lspOutput = preHint ? `\n\n${preHint}` : "";
 
 		// TypeScript LSP diagnostics
 		if (!pi.getFlag("no-lsp") && tsClient.isTypeScriptFile(filePath)) {
@@ -1931,10 +1868,10 @@ export default function (pi: ExtensionAPI) {
 
 			if (newViolations.length > 0) {
 				const hasFixable = newViolations.some((v) => v.fix);
-				lspOutput += `\n\n🔴 You introduced ${newViolations.length} new structural violation(s) — fix before moving on:\n`;
+				lspOutput += `\n\n🔴 STOP — you introduced ${newViolations.length} new structural violation(s). Fix before continuing:\n`;
 				lspOutput += astGrepClient.formatDiagnostics(newViolations);
 				if (hasFixable)
-					lspOutput += `\n  Some are fixable — check the → hints above`;
+					lspOutput += `\n  → Auto-fixable: check the hints above`;
 			}
 			if (fixedRules.length > 0) {
 				lspOutput += `\n\n✅ ast-grep: fixed ${fixedRules.join(", ")}`;
@@ -2001,15 +1938,12 @@ export default function (pi: ExtensionAPI) {
 				}
 			} else if (newDiags.length > 0) {
 				const fixable = newDiags.filter((d) => d.fixable);
-				lspOutput += `\n\n🟠 You introduced ${newDiags.length} new Biome violation(s) — fix before moving on:\n`;
+				lspOutput += `\n\n🔴 STOP — you introduced ${newDiags.length} new Biome violation(s). Fix before continuing:\n`;
 				lspOutput += biomeClient.formatDiagnostics(newDiags, filePath);
 				if (fixable.length > 0)
 					lspOutput += `\n  → Auto-fixable: \`npx @biomejs/biome check --write ${path.basename(filePath)}\``;
 				if (fixedRules.length > 0) {
 					lspOutput += `\n\n✅ Biome: fixed ${fixedRules.join(", ")}`;
-				}
-				if (after.length > 0) {
-					lspOutput += `\n  (${after.length} total remaining)`;
 				}
 			} else if (fixedRules.length > 0) {
 				lspOutput += `\n\n✅ Biome: fixed ${fixedRules.join(", ")}`;
@@ -2038,24 +1972,6 @@ export default function (pi: ExtensionAPI) {
 			const rustDiags = rustClient.checkFile(filePath, cwd);
 			if (rustDiags.length > 0) {
 				lspOutput += `\n\n${rustClient.formatDiagnostics(rustDiags)}`;
-			}
-		}
-
-		// Complexity threshold warnings (actionable)
-		if (complexityClient.isSupportedFile(filePath)) {
-			const metrics = complexityClient.analyzeFile(filePath);
-			if (metrics) {
-				const warnings = complexityClient.checkThresholds(metrics);
-				if (warnings.length > 0) {
-					const isTestFile = /\.(test|spec)\.[jt]sx?$/.test(filePath);
-					if (!isTestFile) {
-						let warningReport = `🟡 Complexity issues — refactor when you get a chance:\n`;
-						for (const w of warnings) {
-							warningReport += `  ⚠ ${w}\n`;
-						}
-						lspOutput += `\n\n${warningReport}`;
-					}
-				}
 			}
 		}
 
@@ -2097,7 +2013,7 @@ export default function (pi: ExtensionAPI) {
 			);
 			if (fileClones.length > 0) {
 				dbg(`  jscpd: ${fileClones.length} duplicate(s) involving ${filePath}`);
-				let dupReport = `🟠 This file has ${fileClones.length} duplicate block(s) — extract to shared utilities:\n`;
+				let dupReport = `🔴 STOP — this file has ${fileClones.length} duplicate block(s). Extract to a shared utility before adding more code:\n`;
 				for (const clone of fileClones.slice(0, 3)) {
 					const other =
 						path.resolve(clone.fileA) === path.resolve(filePath)
@@ -2146,51 +2062,6 @@ export default function (pi: ExtensionAPI) {
 				}
 			} catch (err) { void err;
 				// ast-grep not available, skip
-			}
-		}
-
-		// Silent metrics summary (appended to first tool_result after files are touched)
-		const metricsSummary = metricsClient.formatSessionSummary();
-		if (metricsSummary) {
-			dbg(`  metrics summary available`);
-			// Only add once per session (check if we've already shown it)
-			if (!sessionMetricsShown) {
-				// Build combined metrics + complexity summary
-				let combinedSummary = metricsSummary;
-
-				// Add complexity delta for changed files
-				const complexityDeltas: string[] = [];
-				for (const [filePath, baseline] of complexityBaselines) {
-					if (fs.existsSync(filePath)) {
-						const current = complexityClient.analyzeFile(filePath);
-						if (current) {
-							const delta = complexityClient.formatDelta(baseline, current);
-							if (delta) {
-								// Actionable regression alerts
-								const miDelta =
-									current.maintainabilityIndex - baseline.maintainabilityIndex;
-								const cogDelta =
-									current.cognitiveComplexity - baseline.cognitiveComplexity;
-
-								let prefix = "";
-								if (miDelta < -1 || cogDelta > 3) {
-									prefix = "🔴 REGRESSED: ";
-								} else if (miDelta > 1 || cogDelta < -3) {
-									prefix = "🟢 IMPROVED: ";
-								}
-
-								complexityDeltas.push(`${prefix}${delta}`);
-							}
-						}
-					}
-				}
-
-				if (complexityDeltas.length > 0) {
-					combinedSummary += `\n\n[Complexity Changes]${complexityDeltas.join("\n")}`;
-				}
-
-				lspOutput += `\n\n${combinedSummary}`;
-				sessionMetricsShown = true;
 			}
 		}
 
