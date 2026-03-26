@@ -1136,93 +1136,152 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	pi.registerCommand("lens-refactor", {
+	pi.registerCommand("lens-booboo-refactor", {
 		description:
-			"Interactive architectural refactor session: surfaces skip-category violations (large-class, long-method, long-parameter-list, no-as-any, etc.) and guides the agent through deliberate refactoring with user decisions. Usage: /lens-refactor [path]",
+			"Interactive architectural refactor: picks worst offender by combined debt score, opens a browser interview with options + recommendation, then steers the agent with your decision. Usage: /lens-booboo-refactor [path]",
 		handler: async (args, ctx) => {
 			const targetPath = args.trim() || ctx.cwd || process.cwd();
 			const fs = require("node:fs") as typeof import("node:fs");
 			ctx.ui.notify("🏗️ Scanning for architectural debt...", "info");
 
-			// Collect all skip-category violations across the codebase
 			const configPath = path.join(
 				typeof __dirname !== "undefined" ? __dirname : ".",
 				"rules",
 				"ast-grep-rules",
 				".sgconfig.yml",
 			);
-
 			const isTsProject = fs.existsSync(path.join(targetPath, "tsconfig.json"));
 
-			const result = require("node:child_process").spawnSync(
-				"npx",
-				[
-					"sg",
-					"scan",
-					"--config",
-					configPath,
-					"--json",
-					"--globs",
-					"!**/*.test.ts",
-					"--globs",
-					"!**/*.spec.ts",
-					"--globs",
-					"!**/test-utils.ts",
-					"--globs",
-					"!**/.pi-lens/**",
-					...(isTsProject ? ["--globs", "!**/*.js"] : []),
-					targetPath,
-				],
-				{
-					encoding: "utf-8",
-					timeout: 30000,
-					shell: true,
-					maxBuffer: 32 * 1024 * 1024,
-				},
-			);
+			// --- 1. ast-grep skip violations by absolute file path ---
+			type SkipIssue = { rule: string; line: number; note: string };
+			const skipByFile = new Map<string, SkipIssue[]>();
 
-			const raw = result.stdout?.trim() ?? "";
-			// biome-ignore lint/suspicious/noExplicitAny: ast-grep JSON output is untyped
-			const items: Record<string, any>[] = raw.startsWith("[")
-				? (() => {
-						try {
-							return JSON.parse(raw);
-						} catch {
-							return [];
-						}
-					})()
-				: raw.split("\n").flatMap((l: string) => {
-						try {
-							return [JSON.parse(l)];
-						} catch {
-							return [];
-						}
-					});
+			if (astGrepClient.isAvailable()) {
+				const sgResult = require("node:child_process").spawnSync(
+					"npx",
+					[
+						"sg",
+						"scan",
+						"--config",
+						configPath,
+						"--json",
+						"--globs",
+						"!**/*.test.ts",
+						"--globs",
+						"!**/*.spec.ts",
+						"--globs",
+						"!**/test-utils.ts",
+						"--globs",
+						"!**/.pi-lens/**",
+						...(isTsProject ? ["--globs", "!**/*.js"] : []),
+						targetPath,
+					],
+					{
+						encoding: "utf-8",
+						timeout: 30000,
+						shell: true,
+						maxBuffer: 32 * 1024 * 1024,
+					},
+				);
 
-			// Keep only skip-category rules
-			type SkipIssue = {
-				rule: string;
-				file: string;
-				line: number;
-				note: string;
-			};
-			const skipIssues: SkipIssue[] = [];
-			for (const item of items) {
-				const rule = item.ruleId || item.rule?.title || item.name || "unknown";
-				if (!SKIP_RULES.has(rule)) continue;
-				const line =
-					(item.labels?.[0]?.range?.start?.line ??
-						item.range?.start?.line ??
-						0) + 1;
-				const relFile = path
-					.relative(targetPath, item.file ?? "")
-					.replace(/\\/g, "/");
-				const note =
-					RULE_ACTIONS[rule]?.note ?? "Requires architectural decision";
-				skipIssues.push({ rule, file: relFile, line, note });
+				const raw = sgResult.stdout?.trim() ?? "";
+				// biome-ignore lint/suspicious/noExplicitAny: ast-grep JSON output is untyped
+				const items: Record<string, any>[] = raw.startsWith("[")
+					? (() => {
+							try {
+								return JSON.parse(raw);
+							} catch {
+								return [];
+							}
+						})()
+					: raw.split("\n").flatMap((l: string) => {
+							try {
+								return [JSON.parse(l)];
+							} catch {
+								return [];
+							}
+						});
+
+				for (const item of items) {
+					const rule =
+						item.ruleId || item.rule?.title || item.name || "unknown";
+					if (!SKIP_RULES.has(rule)) continue;
+					const line =
+						(item.labels?.[0]?.range?.start?.line ??
+							item.range?.start?.line ??
+							0) + 1;
+					const absFile = path.resolve(item.file ?? "");
+					const list = skipByFile.get(absFile) ?? [];
+					list.push({ rule, line, note: RULE_ACTIONS[rule]?.note ?? "" });
+					skipByFile.set(absFile, list);
+				}
 			}
 
-			if (skipIssues.length === 0) {
+			// --- 2. Complexity metrics by absolute file path ---
+			type FileMetrics = { mi: number; cognitive: number; nesting: number };
+			const metricsByFile = new Map<string, FileMetrics>();
+
+			const scanComplexity = (dir: string) => {
+				if (!fs.existsSync(dir)) return;
+				for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+					const full = path.join(dir, entry.name);
+					if (entry.isDirectory()) {
+						if (
+							[
+								"node_modules",
+								".git",
+								"dist",
+								"build",
+								".next",
+								".pi-lens",
+							].includes(entry.name)
+						)
+							continue;
+						scanComplexity(full);
+					} else if (
+						complexityClient.isSupportedFile(full) &&
+						!/\.(test|spec)\.[jt]sx?$/.test(entry.name) &&
+						!(isTsProject && /\.js$/.test(entry.name))
+					) {
+						const m = complexityClient.analyzeFile(full);
+						if (m)
+							metricsByFile.set(full, {
+								mi: m.maintainabilityIndex,
+								cognitive: m.cognitiveComplexity,
+								nesting: m.maxNestingDepth,
+							});
+					}
+				}
+			};
+			scanComplexity(targetPath);
+
+			// --- 3. Score each file ---
+			const allFiles = new Set([...skipByFile.keys(), ...metricsByFile.keys()]);
+			const scored = [...allFiles]
+				.map((file) => {
+					let score = 0;
+					const m = metricsByFile.get(file);
+					if (m) {
+						if (m.mi < 20) score += 5;
+						else if (m.mi < 40) score += 3;
+						else if (m.mi < 60) score += 1;
+						if (m.cognitive > 300) score += 4;
+						else if (m.cognitive > 150) score += 2;
+						else if (m.cognitive > 80) score += 1;
+						if (m.nesting > 8) score += 2;
+						else if (m.nesting > 5) score += 1;
+					}
+					for (const issue of skipByFile.get(file) ?? []) {
+						if (issue.rule === "large-class") score += 5;
+						else if (issue.rule === "no-as-any") score += 2;
+						else score += 1;
+					}
+					return { file, score };
+				})
+				.filter((f) => f.score > 0)
+				.sort((a, b) => b.score - a.score);
+
+			if (scored.length === 0) {
 				ctx.ui.notify(
 					"✅ No architectural debt found — codebase is clean.",
 					"info",
@@ -1230,53 +1289,407 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
-			// Group by rule then by file
-			const byRule = new Map<string, SkipIssue[]>();
-			for (const issue of skipIssues) {
-				const list = byRule.get(issue.rule) ?? [];
-				list.push(issue);
-				byRule.set(issue.rule, list);
+			const { file: worstFile, score } = scored[0];
+			const relFile = path.relative(targetPath, worstFile).replace(/\\/g, "/");
+			const issues = skipByFile.get(worstFile) ?? [];
+			const metrics = metricsByFile.get(worstFile);
+
+			// --- 4. Code snippet ---
+			let snippet = "";
+			let snippetStart = 1;
+			let snippetEnd = 1;
+			try {
+				const fileLines = fs.readFileSync(worstFile, "utf-8").split("\n");
+				const firstLine = Math.max(0, (issues[0]?.line ?? 1) - 1);
+				const start = Math.max(0, firstLine - 2);
+				const end = Math.min(fileLines.length, start + 45);
+				snippet = fileLines.slice(start, end).join("\n");
+				snippetStart = start + 1;
+				snippetEnd = end;
+			} catch {
+				void 0;
 			}
 
-			const lines: string[] = [];
-			lines.push(
-				`🏗️ ARCHITECTURAL DEBT — ${skipIssues.length} item(s) requiring deliberate refactoring`,
-			);
-			lines.push("");
-			lines.push(
-				"These cannot be auto-fixed. Each requires a design decision.",
-			);
-			lines.push(
-				"Review each section, ask questions if needed, then refactor one at a time.",
-			);
-			lines.push("");
+			// --- 5. Options per primary violation ---
+			type RefactorOption = {
+				value: string;
+				label: string;
+				context?: string;
+				recommended?: boolean;
+			};
 
-			for (const [rule, issues] of byRule) {
-				const note =
-					RULE_ACTIONS[rule]?.note ?? "Requires architectural decision";
-				lines.push(`## ${rule} (${issues.length})`);
-				lines.push(`→ ${note}`);
-				// Group by file
-				const byFile = new Map<string, number[]>();
-				for (const i of issues) {
-					const lns = byFile.get(i.file) ?? [];
-					lns.push(i.line);
-					byFile.set(i.file, lns);
+			const ruleWeights: Record<string, number> = {
+				"large-class": 5,
+				"long-method": 3,
+				"long-parameter-list": 2,
+				"no-as-any": 2,
+				"no-non-null-assertion": 1,
+				"no-shadow": 1,
+			};
+			const primaryRule =
+				issues.length > 0
+					? [...issues].sort(
+							(a, b) => (ruleWeights[b.rule] ?? 0) - (ruleWeights[a.rule] ?? 0),
+						)[0].rule
+					: null;
+
+			const optionSets: Record<string, RefactorOption[]> = {
+				"large-class": [
+					{
+						value: "split-srp",
+						label: "Split by Single Responsibility",
+						context: "Create separate classes for each distinct concern",
+						recommended: true,
+					},
+					{
+						value: "split-layer",
+						label: "Split by layer (data / logic / output)",
+						context: "Separate data handling, business logic, and formatting",
+					},
+					{
+						value: "extract-helpers",
+						label: "Extract helper classes for the heaviest methods",
+						context: "Keep main class as orchestrator, pull complex logic out",
+					},
+				],
+				"long-method": [
+					{
+						value: "extract-steps",
+						label: "Extract steps into private methods",
+						context:
+							"Each logical step becomes a named helper — main method becomes orchestrator",
+						recommended: true,
+					},
+					{
+						value: "early-returns",
+						label: "Flatten with early returns",
+						context: "Reduce nesting by returning on guard conditions up front",
+					},
+					{
+						value: "split-functions",
+						label: "Split into separate exported functions",
+						context: "Remove from class entirely if the logic is stateless",
+					},
+				],
+				"long-parameter-list": [
+					{
+						value: "options-object",
+						label: "Group into an options/config object",
+						context:
+							"{ param1, param2, ... } — callers use named params, easy to extend",
+						recommended: true,
+					},
+					{
+						value: "builder",
+						label: "Use a builder pattern",
+						context:
+							".withX().withY().build() — good when many params are optional",
+					},
+					{
+						value: "reduce-params",
+						label: "Reduce parameters — derive some from others",
+						context: "Check if some params can be computed internally",
+					},
+				],
+				"no-as-any": [
+					{
+						value: "proper-type",
+						label: "Add the proper generic or interface type",
+						context: "Trace the actual data shape and type it correctly",
+						recommended: true,
+					},
+					{
+						value: "unknown-guard",
+						label: "Use unknown + runtime type guard",
+						context:
+							"Cast to unknown, narrow with a guard — safest for external data",
+					},
+					{
+						value: "suppress",
+						label: "Suppress with biome-ignore (justified boundary)",
+						context:
+							"Only for third-party boundaries where types are genuinely unavailable",
+					},
+				],
+				"no-non-null-assertion": [
+					{
+						value: "optional-chain",
+						label: "Replace ! with optional chaining (?.) and ??",
+						context: "Propagate null safely rather than asserting it away",
+						recommended: true,
+					},
+					{
+						value: "explicit-check",
+						label: "Add an explicit null check / early return",
+						context:
+							"if (!x) return; — makes the assumption visible and catchable",
+					},
+				],
+				"no-shadow": [
+					{
+						value: "rename-inner",
+						label: "Rename the inner variable to remove shadow",
+						context: "Pick a more specific name for the inner scope",
+						recommended: true,
+					},
+					{
+						value: "rename-outer",
+						label: "Rename the outer variable if inner name is more natural",
+						context: "Sometimes the outer name is the generic one",
+					},
+				],
+			};
+
+			const lowMiOptions: RefactorOption[] = [
+				{
+					value: "extract-helpers",
+					label: "Extract the largest methods into helpers",
+					context: "MI improves significantly when method size shrinks",
+					recommended: true,
+				},
+				{
+					value: "split-module",
+					label: "Split the file into two smaller modules",
+					context: "Move related groups of functions to a dedicated file",
+				},
+				{
+					value: "simplify-logic",
+					label: "Simplify conditional logic in the worst methods",
+					context: "Replace nested ifs with early returns or lookup tables",
+				},
+			];
+
+			const baseOptions: RefactorOption[] =
+				primaryRule && optionSets[primaryRule]
+					? optionSets[primaryRule]
+					: lowMiOptions;
+
+			const nextFile = scored[1]
+				? path.relative(targetPath, scored[1].file).replace(/\\/g, "/")
+				: "none";
+			const options: RefactorOption[] = [
+				...baseOptions,
+				{
+					value: "__skip__",
+					label: "Skip — show next worst offender",
+					context: `Next: ${nextFile} (score ${scored[1]?.score ?? 0})`,
+				},
+				{ value: "__free__", label: "Describe a different approach" },
+			];
+
+			// --- 6. Build HTML ---
+			const esc = (s: string) =>
+				s
+					.replace(/&/g, "&amp;")
+					.replace(/</g, "&lt;")
+					.replace(/>/g, "&gt;")
+					.replace(/"/g, "&quot;");
+
+			const ruleGroups = new Map<string, number>();
+			for (const i of issues)
+				ruleGroups.set(i.rule, (ruleGroups.get(i.rule) ?? 0) + 1);
+
+			const badges = [
+				`<span class="badge">Score: ${score}</span>`,
+				...(metrics
+					? [
+							metrics.mi < 60
+								? `<span class="badge ${metrics.mi < 20 ? "crit" : "warn"}">MI: ${metrics.mi.toFixed(1)}</span>`
+								: "",
+							metrics.cognitive > 80
+								? `<span class="badge ${metrics.cognitive > 300 ? "crit" : "warn"}">Cognitive: ${metrics.cognitive}</span>`
+								: "",
+						].filter(Boolean)
+					: []),
+				...[...ruleGroups.entries()].map(
+					([r, n]) => `<span class="badge warn">${esc(r)} ×${n}</span>`,
+				),
+			].join("");
+
+			const issuesHtml = issues
+				.slice(0, 8)
+				.map(
+					(i) =>
+						`<div class="issue"><span class="rule">${esc(i.rule)}</span> · L${i.line}${i.note ? ` · <span class="note">${esc(i.note)}</span>` : ""}</div>`,
+				)
+				.join("");
+
+			const optionsHtml = options
+				.map(
+					(opt, idx) => `
+				<label class="card${opt.recommended ? " rec" : ""}">
+					<input type="radio" name="choice" value="${esc(opt.value)}"${opt.recommended ? " checked" : ""}>
+					<div class="card-body">
+						<div class="card-top"><span class="num">${idx + 1}.</span><span class="lbl">${esc(opt.label)}</span>${opt.recommended ? '<span class="badge-rec">Recommended</span>' : ""}</div>
+						${opt.context ? `<div class="ctx">${esc(opt.context)}</div>` : ""}
+					</div>
+				</label>`,
+				)
+				.join("\n");
+
+			const question = primaryRule
+				? `How should we address \`${primaryRule}\` in \`${relFile}\`?`
+				: `How should we reduce the complexity of \`${relFile}\`?`;
+
+			const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>🏗️ Lens Refactor — ${esc(relFile)}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0d1117;color:#e6edf3;padding:28px 32px;max-width:880px;margin:0 auto;line-height:1.5}
+h1{font-size:17px;color:#58a6ff;margin-bottom:3px}
+.sub{color:#8b949e;font-size:12px;margin-bottom:16px}
+.badges{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px}
+.badge{background:#21262d;border:1px solid #30363d;padding:2px 10px;border-radius:12px;font-size:12px;font-family:monospace}
+.badge.warn{border-color:#d29922;color:#e3b341}.badge.crit{border-color:#f85149;color:#ff7b72}
+.code-wrap{background:#161b22;border:1px solid #30363d;border-radius:8px;margin-bottom:18px;overflow:hidden}
+.code-hdr{padding:7px 14px;font-size:11px;color:#8b949e;border-bottom:1px solid #30363d;font-family:monospace}
+pre{padding:14px;font-family:'Fira Code',Consolas,monospace;font-size:12.5px;line-height:1.65;overflow-x:auto;white-space:pre}
+.issues{margin-bottom:16px}
+.issue{font-size:12px;color:#8b949e;padding:4px 0;border-bottom:1px solid #21262d}
+.issue:last-child{border-bottom:none}.rule{color:#e3b341;font-weight:600}.note{color:#6e7681}
+.question{font-size:15px;font-weight:600;color:#f0f6fc;margin-bottom:12px}
+.opts{display:flex;flex-direction:column;gap:8px;margin-bottom:16px}
+.card{border:1px solid #30363d;border-radius:8px;padding:11px 14px;cursor:pointer;transition:border-color .12s,background .12s;display:flex;align-items:flex-start;gap:10px}
+.card:hover,.card.selected{border-color:#58a6ff;background:#0d1f30}
+.card.rec{border-color:#1f6feb}
+.card input{margin-top:3px;accent-color:#58a6ff;flex-shrink:0}
+.card-body{flex:1}.card-top{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.num{color:#6e7681;font-size:13px;min-width:18px}.lbl{font-size:13.5px;font-weight:500}
+.badge-rec{background:#1f4e2e;color:#3fb950;font-size:10px;padding:1px 7px;border-radius:10px;margin-left:4px;font-weight:600}
+.ctx{color:#8b949e;font-size:12px;margin-top:3px;padding-left:22px}
+.free-area{display:none;margin-top:10px;padding-left:22px}
+textarea{width:100%;background:#161b22;border:1px solid #30363d;color:#e6edf3;padding:9px;border-radius:6px;font-family:inherit;font-size:13px;resize:vertical;min-height:72px;outline:none;transition:border-color .12s}
+textarea:focus{border-color:#58a6ff}
+.submit-row{display:flex;align-items:center;gap:12px;margin-top:4px}
+button{background:#238636;color:#fff;border:1px solid #2ea043;padding:9px 22px;border-radius:6px;font-size:13.5px;font-weight:600;cursor:pointer;transition:background .12s}
+button:hover{background:#2ea043}.hint{color:#6e7681;font-size:12px}
+</style></head><body>
+<h1>🏗️ Lens Booboo Refactor</h1>
+<div class="sub">${esc(relFile)} · worst offender · debt score ${score}</div>
+<div class="badges">${badges}</div>
+<div class="code-wrap"><div class="code-hdr">${esc(relFile)} · lines ${snippetStart}–${snippetEnd}</div><pre>${esc(snippet)}</pre></div>
+${issuesHtml ? `<div class="issues">${issuesHtml}</div>` : ""}
+<form method="POST" id="f">
+<div class="question">${esc(question)}</div>
+<div class="opts">${optionsHtml}</div>
+<div class="free-area" id="fa"><textarea name="freeText" placeholder="Describe your preferred refactoring approach..."></textarea></div>
+<div class="submit-row"><button type="submit">Submit</button><span class="hint">Ctrl+Enter</span></div>
+</form>
+<script>
+const cards=document.querySelectorAll('.card');
+function sel(c){cards.forEach(x=>{x.classList.remove('selected');x.querySelector('input').checked=false;});c.classList.add('selected');c.querySelector('input').checked=true;document.getElementById('fa').style.display=c.querySelector('input').value==='__free__'?'block':'none';}
+cards.forEach(c=>c.addEventListener('click',()=>sel(c)));
+const rec=document.querySelector('.card.rec');if(rec)sel(rec);else if(cards.length)sel(cards[0]);
+document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='Enter')document.getElementById('f').submit();});
+</script>
+</body></html>`;
+
+			// --- 7. Local HTTP server ---
+			const http = require("node:http") as typeof import("node:http");
+			const net = require("node:net");
+
+			const getPort = (): Promise<number> =>
+				new Promise((res, rej) => {
+					const srv = net.createServer();
+					srv.listen(0, () => {
+						const p = (srv.address() as { port: number }).port;
+						srv.close(() => res(p));
+					});
+					srv.on("error", rej);
+				});
+
+			const port = await getPort();
+			let resolveChoice!: (choice: string) => void;
+			const choicePromise = new Promise<string>((res) => {
+				resolveChoice = res;
+			});
+
+			const server = http.createServer((req, res) => {
+				if (req.method === "GET") {
+					res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+					res.end(html);
+				} else if (req.method === "POST") {
+					let body = "";
+					req.on("data", (chunk) => {
+						body += chunk.toString();
+					});
+					req.on("end", () => {
+						const params = new URLSearchParams(body);
+						const choice = params.get("choice") ?? "";
+						const freeText = params.get("freeText") ?? "";
+						const final = choice === "__free__" ? freeText.trim() : choice;
+						res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+						res.end(
+							`<!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{font-family:system-ui;background:#0d1117;color:#e6edf3;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center}</style></head><body><div><h2>✅ Response received</h2><p style="color:#8b949e;margin-top:8px">You can close this tab.</p></div></body></html>`,
+						);
+						server.close();
+						resolveChoice(final);
+					});
 				}
-				for (const [file, lns] of byFile) {
-					lines.push(
-						`  \`${file}\`: lines ${lns.slice(0, 8).join(", ")}${lns.length > 8 ? ` (+${lns.length - 8} more)` : ""}`,
-					);
-				}
-				lines.push("");
+			});
+
+			server.listen(port);
+			ctx.ui.notify(`🌐 Opening browser at http://localhost:${port}`, "info");
+
+			const { spawnSync: spawn } = require("node:child_process");
+			const url = `http://localhost:${port}`;
+			if (process.platform === "win32")
+				spawn("cmd", ["/c", "start", "", url], { shell: false });
+			else if (process.platform === "darwin") spawn("open", [url]);
+			else spawn("xdg-open", [url]);
+
+			// --- 8. Await response (10 min timeout) ---
+			const timeout = new Promise<null>((res) =>
+				setTimeout(() => res(null), 10 * 60 * 1000),
+			);
+			const userChoice = await Promise.race([choicePromise, timeout]);
+
+			if (!userChoice) {
+				server.close();
+				ctx.ui.notify(
+					"⏰ Refactor session timed out — no response received.",
+					"warning",
+				);
+				return;
 			}
 
-			lines.push("---");
-			lines.push(
-				"Pick one item above, read the code in context, then propose a refactoring plan before making changes.",
-			);
+			if (userChoice === "__skip__") {
+				ctx.ui.notify(
+					"⏭️ Skipped — run /lens-booboo-refactor again to see the next offender.",
+					"info",
+				);
+				return;
+			}
 
-			pi.sendUserMessage(lines.join("\n"), { deliverAs: "steer" });
+			// --- 9. Steer agent ---
+			const issuesSummary = [...ruleGroups.entries()]
+				.map(([r, n]) => `${r} ×${n}`)
+				.join(", ");
+			const metricsSummary = metrics
+				? `MI: ${metrics.mi.toFixed(1)}, Cognitive: ${metrics.cognitive}`
+				: "";
+
+			const steer = [
+				`🏗️ REFACTOR DECISION — \`${relFile}\``,
+				"",
+				`**User's choice**: ${userChoice}`,
+				"",
+				`**Debt signal**: ${[issuesSummary, metricsSummary].filter(Boolean).join(" · ")}`,
+				"",
+				`**Code context** (\`${relFile}\` lines ${snippetStart}–${snippetEnd}):`,
+				"```typescript",
+				snippet,
+				"```",
+				"",
+				"**Instructions**:",
+				"1. Read the full file to understand complete context",
+				"2. Based on the user's choice, propose a concrete refactoring plan",
+				"3. Show the plan clearly — what to extract, new names, where it goes",
+				"4. **Wait for the user to confirm before making any changes**",
+				"5. After confirmation, implement the refactoring",
+			].join("\n");
+
+			pi.sendUserMessage(steer, { deliverAs: "steer" });
 		},
 	});
 
