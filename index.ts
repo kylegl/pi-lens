@@ -14,7 +14,7 @@ import { buildInterviewer } from "./clients/interviewer.js";
 import { JscpdClient } from "./clients/jscpd-client.js";
 import { KnipClient } from "./clients/knip-client.js";
 import { MetricsClient } from "./clients/metrics-client.js";
-import { captureSnapshots, getTrendSummary, formatTrendCell } from "./clients/metrics-history.js";
+import { captureSnapshot, captureSnapshots, getTrendSummary, formatTrendCell } from "./clients/metrics-history.js";
 import { RuffClient } from "./clients/ruff-client.js";
 import { RustClient } from "./clients/rust-client.js";
 import { getSourceFiles } from "./clients/scan-utils.js";
@@ -902,7 +902,7 @@ export default function (pi: ExtensionAPI) {
 		);
 		if (!nodeFs.existsSync(filePath)) return;
 
-		// Record complexity baseline for TS/JS files
+		// Record complexity baseline for TS/JS files + capture history snapshot
 		if (
 			complexityClient.isSupportedFile(filePath) &&
 			!complexityBaselines.has(filePath)
@@ -910,6 +910,13 @@ export default function (pi: ExtensionAPI) {
 			const baseline = complexityClient.analyzeFile(filePath);
 			if (baseline) {
 				complexityBaselines.set(filePath, baseline);
+				// Capture snapshot for historical tracking (async, non-blocking)
+				captureSnapshot(filePath, {
+					maintainabilityIndex: baseline.maintainabilityIndex,
+					cognitiveComplexity: baseline.cognitiveComplexity,
+					maxNestingDepth: baseline.maxNestingDepth,
+					linesOfCode: baseline.linesOfCode,
+				});
 			}
 		}
 

@@ -99,8 +99,14 @@ export function saveHistory(history: MetricsHistory): void {
 	fs.writeFileSync(historyPath, JSON.stringify(history, null, 2));
 }
 
+// In-memory cache to avoid loading/saving on every capture
+let pendingHistory: MetricsHistory | null = null;
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
+const SAVE_DEBOUNCE_MS = 5000; // Save at most every 5 seconds
+
 /**
  * Capture a snapshot for a file's current metrics
+ * Auto-saves to disk (debounced) for passive tracking
  */
 export function captureSnapshot(
 	filePath: string,
@@ -110,9 +116,12 @@ export function captureSnapshot(
 		maxNestingDepth: number;
 		linesOfCode: number;
 	},
-	history?: MetricsHistory,
-): MetricsHistory {
-	const hist = history ?? loadHistory();
+): void {
+	// Use in-memory cache if available, otherwise load from disk
+	if (!pendingHistory) {
+		pendingHistory = loadHistory();
+	}
+
 	const relativePath = path.relative(process.cwd(), filePath);
 	const commit = getCurrentCommit();
 
@@ -125,9 +134,14 @@ export function captureSnapshot(
 		lines: metrics.linesOfCode,
 	};
 
-	const existing = hist.files[relativePath];
+	const existing = pendingHistory.files[relativePath];
 
 	if (existing) {
+		// Skip if same commit + same MI (no change worth recording)
+		const latest = existing.latest;
+		if (latest.commit === commit && latest.mi === snapshot.mi) {
+			return;
+		}
 		// Append to history (cap at MAX_HISTORY_PER_FILE)
 		existing.history.push(snapshot);
 		if (existing.history.length > MAX_HISTORY_PER_FILE) {
@@ -137,18 +151,26 @@ export function captureSnapshot(
 		existing.trend = computeTrend(existing.history);
 	} else {
 		// New file
-		hist.files[relativePath] = {
+		pendingHistory.files[relativePath] = {
 			latest: snapshot,
 			history: [snapshot],
 			trend: "stable",
 		};
 	}
 
-	return hist;
+	// Debounced save to disk
+	if (saveTimer) clearTimeout(saveTimer);
+	saveTimer = setTimeout(() => {
+		if (pendingHistory) {
+			saveHistory(pendingHistory);
+			pendingHistory = null;
+		}
+	}, SAVE_DEBOUNCE_MS);
 }
 
 /**
- * Capture snapshots for multiple files
+ * Capture snapshots for multiple files (explicit, immediate save)
+ * Used by /lens-metrics for batch capture
  */
 export function captureSnapshots(
 	files: Array<{
@@ -164,7 +186,34 @@ export function captureSnapshots(
 	let history = loadHistory();
 
 	for (const file of files) {
-		history = captureSnapshot(file.filePath, file.metrics, history);
+		const relativePath = path.relative(process.cwd(), file.filePath);
+		const commit = getCurrentCommit();
+
+		const snapshot: MetricSnapshot = {
+			commit,
+			timestamp: new Date().toISOString(),
+			mi: Math.round(file.metrics.maintainabilityIndex * 10) / 10,
+			cognitive: file.metrics.cognitiveComplexity,
+			nesting: file.metrics.maxNestingDepth,
+			lines: file.metrics.linesOfCode,
+		};
+
+		const existing = history.files[relativePath];
+
+		if (existing) {
+			existing.history.push(snapshot);
+			if (existing.history.length > MAX_HISTORY_PER_FILE) {
+				existing.history = existing.history.slice(-MAX_HISTORY_PER_FILE);
+			}
+			existing.latest = snapshot;
+			existing.trend = computeTrend(existing.history);
+		} else {
+			history.files[relativePath] = {
+				latest: snapshot,
+				history: [snapshot],
+				trend: "stable",
+			};
+		}
 	}
 
 	saveHistory(history);
