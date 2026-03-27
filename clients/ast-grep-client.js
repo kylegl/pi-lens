@@ -7,12 +7,12 @@
  * Requires: npm install -D @ast-grep/cli
  * Rules: ./rules/ directory
  */
-import { spawn, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import { AstGrepParser } from "./ast-grep-parser.js";
 import { AstGrepRuleManager } from "./ast-grep-rule-manager.js";
+import { SgRunner } from "./sg-runner.js";
 const getExtensionDir = () => {
     if (typeof __dirname !== "undefined") {
         return __dirname;
@@ -23,11 +23,12 @@ const getExtensionDir = () => {
 export class AstGrepClient {
     constructor(ruleDir, verbose = false) {
         this.available = null;
-        this.ruleDir = ruleDir || path.join(getExtensionDir(), "..", "rules");
+        this.ruleDir = ruleDir || path.join(process.cwd(), "rules");
         this.log = verbose
             ? (msg) => console.error(`[ast-grep] ${msg}`)
             : () => { };
         this.ruleManager = new AstGrepRuleManager(this.ruleDir, this.log);
+        this.runner = new SgRunner(verbose);
     }
     /**
      * Check if ast-grep CLI is available
@@ -35,12 +36,7 @@ export class AstGrepClient {
     isAvailable() {
         if (this.available !== null)
             return this.available;
-        const result = spawnSync("npx", ["sg", "--version"], {
-            encoding: "utf-8",
-            timeout: 10000,
-            shell: true,
-        });
-        this.available = !result.error && result.status === 0;
+        this.available = this.runner.isAvailable();
         if (this.available) {
             this.log("ast-grep available");
         }
@@ -50,7 +46,7 @@ export class AstGrepClient {
      * Search for AST patterns in files
      */
     async search(pattern, lang, paths) {
-        return this.runSg([
+        return this.runner.exec([
             "run",
             "-p",
             pattern,
@@ -77,7 +73,7 @@ export class AstGrepClient {
         if (apply)
             args.push("--update-all");
         args.push(...paths);
-        const result = await this.runSg(args);
+        const result = await this.runner.exec(args);
         return { matches: result.matches, applied: apply, error: result.error };
     }
     /**
@@ -86,39 +82,7 @@ export class AstGrepClient {
     runTempScan(dir, ruleId, ruleYaml, timeout = 30000) {
         if (!this.isAvailable())
             return [];
-        const tmpDir = os.tmpdir();
-        const ts = Date.now();
-        const sessionDir = path.join(tmpDir, `pi-lens-temp-${ruleId}-${ts}`);
-        const rulesSubdir = path.join(sessionDir, "rules");
-        const ruleFile = path.join(rulesSubdir, `${ruleId}.yml`);
-        const configFile = path.join(sessionDir, ".sgconfig.yml");
-        try {
-            fs.mkdirSync(rulesSubdir, { recursive: true });
-            fs.writeFileSync(configFile, `ruleDirs:\n  - ./rules\n`);
-            fs.writeFileSync(ruleFile, ruleYaml);
-            const result = spawnSync("npx", ["sg", "scan", "--config", configFile, "--json", dir], {
-                encoding: "utf-8",
-                timeout,
-                shell: true,
-            });
-            const output = result.stdout || result.stderr || "";
-            if (!output.trim())
-                return [];
-            const items = JSON.parse(output);
-            return Array.isArray(items) ? items : [items];
-        }
-        catch (err) {
-            void err;
-            return [];
-        }
-        finally {
-            try {
-                fs.rmSync(sessionDir, { recursive: true, force: true });
-            }
-            catch (err) {
-                void err;
-            }
-        }
+        return this.runner.tempScan(dir, ruleId, ruleYaml, timeout);
     }
     /**
      * Find similar functions by comparing normalized AST structure
@@ -204,68 +168,8 @@ message: found
         }
         return exports;
     }
-    runSg(args) {
-        return new Promise((resolve) => {
-            const proc = spawn("npx", ["sg", ...args], {
-                stdio: ["ignore", "pipe", "pipe"],
-                shell: true,
-            });
-            let stdout = "";
-            let stderr = "";
-            proc.stdout.on("data", (data) => (stdout += data.toString()));
-            proc.stderr.on("data", (data) => (stderr += data.toString()));
-            proc.on("error", (err) => {
-                if (err.message.includes("ENOENT")) {
-                    resolve({
-                        matches: [],
-                        error: "ast-grep CLI not found. Install: npm i -D @ast-grep/cli",
-                    });
-                }
-                else {
-                    resolve({ matches: [], error: err.message });
-                }
-            });
-            proc.on("close", (code) => {
-                if (code !== 0 && !stdout.trim()) {
-                    resolve({
-                        matches: [],
-                        error: stderr.includes("No files found")
-                            ? undefined
-                            : stderr.trim() || `Exit code ${code}`,
-                    });
-                    return;
-                }
-                if (!stdout.trim()) {
-                    resolve({ matches: [] });
-                    return;
-                }
-                try {
-                    const parsed = JSON.parse(stdout);
-                    const matches = Array.isArray(parsed) ? parsed : [parsed];
-                    resolve({ matches });
-                }
-                catch (err) {
-                    void err;
-                    resolve({ matches: [], error: "Failed to parse output" });
-                }
-            });
-        });
-    }
     formatMatches(matches, isDryRun = false) {
-        if (matches.length === 0)
-            return "No matches found";
-        const MAX = 50;
-        const shown = matches.slice(0, MAX);
-        const lines = shown.map((m) => {
-            const loc = `${m.file}:${m.range.start.line + 1}:${m.range.start.column + 1}`;
-            const text = m.text.length > 100 ? `${m.text.slice(0, 100)}...` : m.text;
-            return isDryRun && m.replacement
-                ? `${loc}\n  - ${text}\n  + ${m.replacement}`
-                : `${loc}: ${text}`;
-        });
-        if (matches.length > MAX)
-            lines.unshift(`Found ${matches.length} matches (showing first ${MAX}):`);
-        return lines.join("\n");
+        return this.runner.formatMatches(matches, isDryRun);
     }
     /**
      * Scan a file against all rules
