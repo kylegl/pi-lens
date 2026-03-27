@@ -139,55 +139,35 @@ export class DependencyChecker {
 		const normalized = path.resolve(filePath);
 
 		if (!fs.existsSync(normalized)) {
-			// File deleted, remove from cache
 			this.importCache.delete(normalized);
 			return true;
 		}
 
 		const stat = fs.statSync(normalized);
-		const mtime = stat.mtimeMs;
-
 		const cached = this.importCache.get(normalized);
 
-		// If timestamp hasn't changed, imports haven't changed
-		if (cached && cached.timestamp >= mtime) {
+		// Fast path: timestamp hasn't changed
+		if (cached && cached.timestamp >= stat.mtimeMs) {
 			return false;
 		}
 
-		// Parse new imports
+		// Compare actual imports
 		const newImports = this.extractImports(normalized);
-		const newEntry: FileImports = {
-			imports: newImports,
-			timestamp: mtime,
-		};
+		const hasChanged = !cached || !this.setsEqual(cached.imports, newImports);
 
-		// Check if imports actually changed
-		if (cached) {
-			if (cached.imports.size !== newImports.size) {
-				this.importCache.set(normalized, newEntry);
-				return true;
-			}
+		// Update cache
+		this.importCache.set(normalized, { imports: newImports, timestamp: stat.mtimeMs });
+		return hasChanged;
+	}
 
-			for (const imp of newImports) {
-				if (!cached.imports.has(imp)) {
-					this.importCache.set(normalized, newEntry);
-					return true;
-				}
-			}
-
-			for (const imp of cached.imports) {
-				if (!newImports.has(imp)) {
-					this.importCache.set(normalized, newEntry);
-					return true;
-				}
-			}
-
-			// Imports are the same, just update timestamp
-			this.importCache.set(normalized, newEntry);
-			return false;
+	/**
+	 * Check if two sets have the same elements
+	 */
+	private setsEqual<T>(a: Set<T>, b: Set<T>): boolean {
+		if (a.size !== b.size) return false;
+		for (const item of a) {
+			if (!b.has(item)) return false;
 		}
-
-		this.importCache.set(normalized, newEntry);
 		return true;
 	}
 
