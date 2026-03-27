@@ -1,4 +1,3 @@
-import * as childProcess from "node:child_process";
 import * as nodeFs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -17,14 +16,7 @@ import { KnipClient } from "./clients/knip-client.js";
 import { MetricsClient } from "./clients/metrics-client.js";
 import { RuffClient } from "./clients/ruff-client.js";
 import { RustClient } from "./clients/rust-client.js";
-import {
-	extractCodeSnippet,
-	scanArchitectViolations,
-	scanComplexityMetrics,
-	scanSkipViolations,
-	scoreFiles,
-} from "./clients/scan-architectural-debt.js";
-import { getSourceFiles, shouldIgnoreFile } from "./clients/scan-utils.js";
+import { getSourceFiles } from "./clients/scan-utils.js";
 import { TestRunnerClient } from "./clients/test-runner-client.js";
 import { TodoScanner } from "./clients/todo-scanner.js";
 import { TypeCoverageClient } from "./clients/type-coverage-client.js";
@@ -35,7 +27,7 @@ import { handleBooboo } from "./commands/booboo.js";
 import { handleFix } from "./commands/fix.js";
 import { handleRefactor } from "./commands/refactor.js";
 
-const getExtensionDir = () => {
+const _getExtensionDir = () => {
 	if (typeof __dirname !== "undefined") {
 		return __dirname;
 	}
@@ -156,16 +148,21 @@ export default function (pi: ExtensionAPI) {
 		description:
 			"Full codebase review: design smells, complexity, AI slop detection, TODOs, dead code, duplicates, type coverage. Results saved to .pi-lens/reviews/. Usage: /lens-booboo [path]",
 		handler: (args, ctx) =>
-			handleBooboo(args, ctx, {
-				astGrep: astGrepClient,
-				complexity: complexityClient,
-				todo: todoScanner,
-				knip: knipClient,
-				jscpd: jscpdClient,
-				typeCoverage: typeCoverageClient,
-				depChecker: depChecker,
-				architect: architectClient,
-			}, pi),
+			handleBooboo(
+				args,
+				ctx,
+				{
+					astGrep: astGrepClient,
+					complexity: complexityClient,
+					todo: todoScanner,
+					knip: knipClient,
+					jscpd: jscpdClient,
+					typeCoverage: typeCoverageClient,
+					depChecker: depChecker,
+					architect: architectClient,
+				},
+				pi,
+			),
 	});
 
 	// --- Rule action map for lens-booboo-fix ---
@@ -262,27 +259,39 @@ export default function (pi: ExtensionAPI) {
 		description:
 			"Iterative fix loop: auto-fixes Biome/Ruff, then generates a per-issue plan for agent to execute. Run repeatedly until clean. Usage: /lens-booboo-fix [path] [--reset]",
 		handler: (args, ctx) =>
-			handleFix(args, ctx, {
-				tsClient,
-				astGrep: astGrepClient,
-				ruff: ruffClient,
-				biome: biomeClient,
-				knip: knipClient,
-				jscpd: jscpdClient,
-				complexity: complexityClient,
-			}, pi, RULE_ACTIONS),
+			handleFix(
+				args,
+				ctx,
+				{
+					tsClient,
+					astGrep: astGrepClient,
+					ruff: ruffClient,
+					biome: biomeClient,
+					knip: knipClient,
+					jscpd: jscpdClient,
+					complexity: complexityClient,
+				},
+				pi,
+				RULE_ACTIONS,
+			),
 	});
-
 
 	pi.registerCommand("lens-booboo-refactor", {
 		description:
 			"Interactive architectural refactor: scans for worst offender, opens a browser interview with options + recommendation, then steers the agent with your decision. Usage: /lens-booboo-refactor [path]",
 		handler: (args, ctx) =>
-			handleRefactor(args, ctx, {
-				astGrep: astGrepClient,
-				complexity: complexityClient,
-				architect: architectClient,
-			}, pi, SKIP_RULES, RULE_ACTIONS),
+			handleRefactor(
+				args,
+				ctx,
+				{
+					astGrep: astGrepClient,
+					complexity: complexityClient,
+					architect: architectClient,
+				},
+				pi,
+				SKIP_RULES,
+				RULE_ACTIONS,
+			),
 	});
 
 	pi.registerCommand("lens-metrics", {

@@ -43,7 +43,9 @@ export async function handleRefactor(args, ctx, clients, pi, skipRules, ruleActi
         metrics ? `**Complexity**: ${metricsSummary}` : "",
         "",
         issues.length > 0 ? `**Violations**:\n${issuesSummary}` : "",
-        archIssues.length > 0 ? `**Architectural rules violated**:\n${archSummary}` : "",
+        archIssues.length > 0
+            ? `**Architectural rules violated**:\n${archSummary}`
+            : "",
         "",
         `**Code** (\`${relFile}\` lines ${snippetStart}–${snippetEnd}):`,
         "```typescript",

@@ -1,6 +1,6 @@
+import * as childProcess from "node:child_process";
 import * as nodeFs from "node:fs";
 import * as path from "node:path";
-import * as childProcess from "node:child_process";
 import { shouldIgnoreFile } from "../clients/scan-utils.js";
 const getExtensionDir = () => {
     if (typeof __dirname !== "undefined") {
@@ -14,16 +14,39 @@ function dbg(msg) {
     try {
         nodeFs.appendFileSync(DEBUG_LOG, line);
     }
-    catch (e) {
+    catch (_e) {
         // Ignored
     }
 }
 export async function handleFix(args, ctx, clients, pi, ruleActions) {
     const resetRequested = args.includes("--reset");
-    const targetPath = args.replace("--reset", "").trim() || ctx.cwd || process.cwd();
+    const fpMatch = args.match(/--false-positive\s+"([^"]+)"/);
+    const falsePositiveId = fpMatch?.[1];
+    // Clean args for path
+    const cleanArgs = args
+        .replace("--reset", "")
+        .replace(/--false-positive\s+"[^"]+"/, "")
+        .trim();
+    const targetPath = cleanArgs || ctx.cwd || process.cwd();
     const sessionFile = path.join(process.cwd(), ".pi-lens", "fix-session.json");
     const configPath = path.join(getExtensionDir(), "..", "rules", "ast-grep-rules", ".sgconfig.yml");
+    // Load or init session
+    let session = {
+        iteration: 0,
+        counts: {},
+        falsePositives: [],
+    };
+    try {
+        session = JSON.parse(nodeFs.readFileSync(sessionFile, "utf-8"));
+        if (!session.falsePositives)
+            session.falsePositives = [];
+    }
+    catch (e) {
+        dbg(`fix-session load failed: ${e}`);
+    }
+    // Handle reset
     if (resetRequested) {
+        session = { iteration: 0, counts: {}, falsePositives: [] };
         try {
             nodeFs.unlinkSync(sessionFile);
         }
@@ -32,20 +55,21 @@ export async function handleFix(args, ctx, clients, pi, ruleActions) {
         }
         ctx.ui.notify("🔄 Fix session reset.", "info");
     }
+    // Handle false positive marking
+    if (falsePositiveId) {
+        if (!session.falsePositives.includes(falsePositiveId)) {
+            session.falsePositives.push(falsePositiveId);
+            nodeFs.mkdirSync(path.dirname(sessionFile), { recursive: true });
+            nodeFs.writeFileSync(sessionFile, JSON.stringify(session, null, 2), "utf-8");
+            ctx.ui.notify(`✅ Marked as false positive: "${falsePositiveId}"`, "info");
+        }
+        // Don't re-scan, just return after marking
+        return;
+    }
     ctx.ui.notify("🔧 Running booboo fix loop...", "info");
     const MAX_ITERATIONS = 10;
     const isTsProject = nodeFs.existsSync(path.join(targetPath, "tsconfig.json"));
     dbg(`booboo-fix: isTsProject=${isTsProject}`);
-    let session = {
-        iteration: 0,
-        counts: {},
-    };
-    try {
-        session = JSON.parse(nodeFs.readFileSync(sessionFile, "utf-8"));
-    }
-    catch (e) {
-        dbg(`fix-session load failed: ${e}`);
-    }
     session.iteration++;
     const prevCounts = { ...session.counts };
     // --- Step 1: Auto-fix with Biome + Ruff ---
@@ -125,7 +149,7 @@ export async function handleFix(args, ctx, clients, pi, ruleActions) {
                 try {
                     return JSON.parse(raw);
                 }
-                catch (e) {
+                catch (_e) {
                     return [];
                 }
             })()
@@ -133,17 +157,25 @@ export async function handleFix(args, ctx, clients, pi, ruleActions) {
                 try {
                     return [JSON.parse(l)];
                 }
-                catch (err) {
+                catch (_err) {
                     return [];
                 }
             });
         for (const item of items) {
             const rule = item.ruleId || item.rule?.title || item.name || "unknown";
-            const line = (item.labels?.[0]?.range?.start?.line ?? item.range?.start?.line ?? 0) + 1;
-            const relFile = path.relative(targetPath, item.file ?? "").replace(/\\/g, "/");
+            const line = (item.labels?.[0]?.range?.start?.line ?? item.range?.start?.line ?? 0) +
+                1;
+            const relFile = path
+                .relative(targetPath, item.file ?? "")
+                .replace(/\\/g, "/");
             if (shouldIgnoreFile(relFile, isTsProject))
                 continue;
-            astIssues.push({ rule, file: relFile, line, message: item.message ?? rule });
+            astIssues.push({
+                rule,
+                file: relFile,
+                line,
+                message: item.message ?? rule,
+            });
         }
     }
     // --- Step 5: AI slop ---
@@ -154,7 +186,14 @@ export async function handleFix(args, ctx, clients, pi, ruleActions) {
         for (const entry of nodeFs.readdirSync(dir, { withFileTypes: true })) {
             const fullPath = path.join(dir, entry.name);
             if (entry.isDirectory()) {
-                if (["node_modules", ".git", "dist", "build", ".next", ".pi-lens"].includes(entry.name))
+                if ([
+                    "node_modules",
+                    ".git",
+                    "dist",
+                    "build",
+                    ".next",
+                    ".pi-lens",
+                ].includes(entry.name))
                     continue;
                 slopScanDir(fullPath);
             }
@@ -167,7 +206,9 @@ export async function handleFix(args, ctx, clients, pi, ruleActions) {
                         w.includes("try/catch") ||
                         w.includes("single-use") ||
                         w.includes("Excessive comments"));
-                    const relFile = path.relative(targetPath, fullPath).replace(/\\/g, "/");
+                    const relFile = path
+                        .relative(targetPath, fullPath)
+                        .replace(/\\/g, "/");
                     if (shouldIgnoreFile(relFile, isTsProject))
                         continue;
                     if (warnings.length >= 2) {
@@ -181,7 +222,13 @@ export async function handleFix(args, ctx, clients, pi, ruleActions) {
     // --- Step 6: Remaining Biome lint ---
     const remainingBiome = [];
     if (!pi.getFlag("no-biome") && clients.biome.isAvailable()) {
-        const checkResult = childProcess.spawnSync("npx", ["@biomejs/biome", "check", "--reporter=json", "--max-diagnostics=50", targetPath], { encoding: "utf-8", timeout: 20000, shell: true });
+        const checkResult = childProcess.spawnSync("npx", [
+            "@biomejs/biome",
+            "check",
+            "--reporter=json",
+            "--max-diagnostics=50",
+            targetPath,
+        ], { encoding: "utf-8", timeout: 20000, shell: true });
         try {
             const data = JSON.parse(checkResult.stdout ?? "{}");
             for (const diag of (data.diagnostics ?? []).slice(0, 20)) {
@@ -202,6 +249,10 @@ export async function handleFix(args, ctx, clients, pi, ruleActions) {
             dbg(`biome lint parse failed: ${e}`);
         }
     }
+    // Helper to create issue ID for false positive tracking
+    const issueId = (type, file, line) => line !== undefined ? `${type}:${file}:${line}` : `${type}:${file}`;
+    // Filter out false positives from issues
+    const isFalsePositive = (id) => session.falsePositives.includes(id);
     const agentTasks = [];
     const skipRules = new Map();
     const byRule = new Map();
@@ -213,25 +264,43 @@ export async function handleFix(args, ctx, clients, pi, ruleActions) {
     for (const [rule, issues] of byRule) {
         const action = ruleActions[rule];
         if (!action || action.type === "agent" || action.type === "biome") {
-            agentTasks.push(...issues);
+            // Filter out false positives
+            agentTasks.push(...issues.filter((i) => !isFalsePositive(issueId(rule, i.file, i.line))));
         }
         else if (action.type === "skip") {
             skipRules.set(rule, { note: action.note, count: issues.length });
         }
     }
+    // Filter false positives from other issue types
+    const filteredDeadCode = deadCodeIssues.filter((i) => !isFalsePositive(issueId("dead_code", i.file ?? i.name)));
+    const filteredDups = dupClones.filter((c) => !isFalsePositive(issueId("duplicate", c.fileA, c.startA)));
+    const filteredBiome = remainingBiome.filter((i) => !isFalsePositive(issueId("biome", i.file, i.line)));
+    const filteredSlop = slopFiles.filter((f) => !isFalsePositive(issueId("slop", f.file)));
     const currentCounts = {
-        duplicates: dupClones.length,
-        dead_code: deadCodeIssues.length,
+        duplicates: filteredDups.length,
+        dead_code: filteredDeadCode.length,
         agent_ast: agentTasks.length,
-        biome_lint: remainingBiome.length,
-        slop_files: slopFiles.length,
+        biome_lint: filteredBiome.length,
+        slop_files: filteredSlop.length,
     };
     session.counts = currentCounts;
     nodeFs.mkdirSync(path.dirname(sessionFile), { recursive: true });
     nodeFs.writeFileSync(sessionFile, JSON.stringify(session, null, 2), "utf-8");
-    const totalFixable = dupClones.length + deadCodeIssues.length + agentTasks.length + remainingBiome.length + slopFiles.length;
-    if (totalFixable === 0) {
-        const msg = `✅ BOOBOO FIX LOOP COMPLETE — No more fixable issues found after ${session.iteration} iteration(s).\n\nRemaining skipped items are architectural — see /lens-booboo for full report.`;
+    const totalFixable = filteredDups.length +
+        filteredDeadCode.length +
+        agentTasks.length +
+        filteredBiome.length +
+        filteredSlop.length;
+    // Check for stuck loop (no progress for 2 iterations)
+    const prevTotal = Object.values(prevCounts).reduce((a, b) => a + b, 0);
+    const currentTotal = totalFixable;
+    const noProgress = session.iteration > 1 && prevTotal === currentTotal;
+    if (totalFixable === 0 || noProgress) {
+        const falsePosCount = session.falsePositives.length;
+        const fpNote = falsePosCount > 0 ? `\n\n📝 ${falsePosCount} item(s) marked as false positives and excluded.` : '';
+        const msg = noProgress
+            ? `⚠️ BOOBOO FIX LOOP STOPPED — No progress after ${session.iteration} iteration(s).${fpNote}\n\nRemaining items may be false positives. Mark them with: /lens-booboo-fix --false-positive "<type>:<file>:<line>"\nOr consider them architectural and move on.`
+            : `✅ BOOBOO FIX LOOP COMPLETE — No more fixable issues found after ${session.iteration} iteration(s).${fpNote}\n\nRemaining skipped items are architectural — see /lens-booboo for full report.`;
         ctx.ui.notify(msg, "info");
         try {
             nodeFs.unlinkSync(sessionFile);
@@ -269,26 +338,26 @@ export async function handleFix(args, ctx, clients, pi, ruleActions) {
         lines.push(`⚡ Auto-fixed: ${[biomeRan && "Biome --write --unsafe", ruffRan && "Ruff --fix + format"].filter(Boolean).join(", ")} already ran.`);
         lines.push("");
     }
-    if (dupClones.length > 0) {
-        lines.push(`## 🔁 Duplicate code [${dupClones.length} block(s)] — fix first`);
+    if (filteredDups.length > 0) {
+        lines.push(`## 🔁 Duplicate code [${filteredDups.length} block(s)] — fix first`);
         lines.push("→ Extract duplicated blocks into shared utilities before fixing violations in them.");
-        for (const clone of dupClones.slice(0, 10)) {
+        for (const clone of filteredDups.slice(0, 10)) {
             const relA = path.relative(targetPath, clone.fileA).replace(/\\/g, "/");
             const relB = path.relative(targetPath, clone.fileB).replace(/\\/g, "/");
             lines.push(`  - ${clone.lines} lines: \`${relA}:${clone.startA}\` ↔ \`${relB}:${clone.startB}\``);
         }
-        if (dupClones.length > 10)
-            lines.push(`  ... and ${dupClones.length - 10} more`);
+        if (filteredDups.length > 10)
+            lines.push(`  ... and ${filteredDups.length - 10} more`);
         lines.push("");
     }
-    if (deadCodeIssues.length > 0) {
-        lines.push(`## 🗑️ Dead code [${deadCodeIssues.length} item(s)] — delete before fixing violations`);
+    if (filteredDeadCode.length > 0) {
+        lines.push(`## 🗑️ Dead code [${filteredDeadCode.length} item(s)] — delete before fixing violations`);
         lines.push("→ Remove unused exports/files — no point fixing violations in code you're about to delete.");
-        for (const issue of deadCodeIssues.slice(0, 10)) {
+        for (const issue of filteredDeadCode.slice(0, 10)) {
             lines.push(`  - [${issue.type}] \`${issue.name}\`${issue.file ? ` in ${issue.file}` : ""}`);
         }
-        if (deadCodeIssues.length > 10)
-            lines.push(`  ... and ${deadCodeIssues.length - 10} more`);
+        if (filteredDeadCode.length > 10)
+            lines.push(`  ... and ${filteredDeadCode.length - 10} more`);
         lines.push("");
     }
     if (agentTasks.length > 0) {
@@ -313,23 +382,23 @@ export async function handleFix(args, ctx, clients, pi, ruleActions) {
             lines.push("");
         }
     }
-    if (remainingBiome.length > 0) {
-        lines.push(`## 🟠 Remaining Biome lint [${remainingBiome.length} items]`);
+    if (filteredBiome.length > 0) {
+        lines.push(`## 🟠 Remaining Biome lint [${filteredBiome.length} items]`);
         lines.push("→ These couldn't be auto-fixed by Biome --unsafe. Fix each one manually:");
-        for (const d of remainingBiome.slice(0, 10)) {
+        for (const d of filteredBiome.slice(0, 10)) {
             lines.push(`  - \`${d.file}:${d.line}\` [${d.rule}] ${d.message}`);
         }
-        if (remainingBiome.length > 10)
-            lines.push(`  ... and ${remainingBiome.length - 10} more`);
+        if (filteredBiome.length > 10)
+            lines.push(`  ... and ${filteredBiome.length - 10} more`);
         lines.push("");
     }
-    if (slopFiles.length > 0) {
-        lines.push(`## 🤖 AI Slop indicators [${slopFiles.length} files]`);
-        for (const { file, warnings } of slopFiles.slice(0, 10)) {
+    if (filteredSlop.length > 0) {
+        lines.push(`## 🤖 AI Slop indicators [${filteredSlop.length} files]`);
+        for (const { file, warnings } of filteredSlop.slice(0, 10)) {
             lines.push(`  - \`${file}\`: ${warnings.map((w) => w.split(" — ")[0]).join(", ")}`);
         }
-        if (slopFiles.length > 10)
-            lines.push(`  ... and ${slopFiles.length - 10} more`);
+        if (filteredSlop.length > 10)
+            lines.push(`  ... and ${filteredSlop.length - 10} more`);
         lines.push("");
     }
     if (skipRules.size > 0) {
@@ -342,6 +411,9 @@ export async function handleFix(args, ctx, clients, pi, ruleActions) {
     lines.push("---");
     lines.push("**ACTION REQUIRED**: Fix the items above in order using your available tools. Once all fixable items are resolved, you MUST run `/lens-booboo-fix` again to verify and proceed to the next iteration.");
     lines.push("If an item is not safe to fix, skip it with a one-sentence explanation of the risk.");
+    lines.push("");
+    lines.push("**Mark false positives**: If an item is a false positive (e.g., Knip can't see dynamic imports), mark it:");
+    lines.push("  `/lens-booboo-fix --false-positive \"dead_code:clients/biome-client.ts\"`");
     const fixPlan = lines.join("\n");
     const planPath = path.join(process.cwd(), ".pi-lens", "fix-plan.md");
     nodeFs.writeFileSync(planPath, `# Fix Plan — Iteration ${session.iteration}\n\n${fixPlan}`, "utf-8");

@@ -15,7 +15,6 @@ import { minimatch } from "minimatch";
 export class ArchitectClient {
     constructor(verbose = false) {
         this.config = null;
-        this.configPath = null;
         this.isUserConfig = false;
         this.log = verbose
             ? (msg) => console.error(`[architect] ${msg}`)

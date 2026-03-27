@@ -302,7 +302,7 @@ export async function handleBooboo(args, ctx, clients, pi) {
             for (const dep of circular) {
                 fullSection += `- ${dep.path.join(" → ")}\n`;
             }
-            fullReport.push(fullSection + "\n");
+            fullReport.push(`${fullSection}\n`);
         }
     }
     // Part 9: Arch rules
@@ -346,7 +346,7 @@ export async function handleBooboo(args, ctx, clients, pi) {
             for (const v of archViolations) {
                 fullSection += `- **${v.file}**: ${v.message}\n`;
             }
-            fullReport.push(fullSection + "\n");
+            fullReport.push(`${fullSection}\n`);
         }
     }
     nodeFs.mkdirSync(reviewDir, { recursive: true });

@@ -1,14 +1,17 @@
 import * as childProcess from "node:child_process";
 import * as nodeFs from "node:fs";
 import * as path from "node:path";
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type {
+	ExtensionAPI,
+	ExtensionContext,
+} from "@mariozechner/pi-coding-agent";
 import type { ArchitectClient } from "../clients/architect-client.js";
 import type { AstGrepClient } from "../clients/ast-grep-client.js";
 import type { ComplexityClient } from "../clients/complexity-client.js";
 import type { DependencyChecker } from "../clients/dependency-checker.js";
 import type { JscpdClient } from "../clients/jscpd-client.js";
 import type { KnipClient } from "../clients/knip-client.js";
-import { getSourceFiles, shouldIgnoreFile } from "../clients/scan-utils.js";
+import { getSourceFiles } from "../clients/scan-utils.js";
 import type { TodoScanner } from "../clients/todo-scanner.js";
 import type { TypeCoverageClient } from "../clients/type-coverage-client.js";
 
@@ -184,7 +187,8 @@ export async function handleBooboo(
 	}
 
 	// Part 3: Complexity metrics
-	const results: import("../clients/complexity-client.js").FileComplexity[] = [];
+	const results: import("../clients/complexity-client.js").FileComplexity[] =
+		[];
 	const aiSlopIssues: string[] = [];
 	const isTsProject = nodeFs.existsSync(path.join(targetPath, "tsconfig.json"));
 	const files = getSourceFiles(targetPath, isTsProject);
@@ -373,7 +377,7 @@ export async function handleBooboo(
 			for (const dep of circular) {
 				fullSection += `- ${dep.path.join(" → ")}\n`;
 			}
-			fullReport.push(fullSection + "\n");
+			fullReport.push(`${fullSection}\n`);
 		}
 	}
 
@@ -421,7 +425,7 @@ export async function handleBooboo(
 			for (const v of archViolations) {
 				fullSection += `- **${v.file}**: ${v.message}\n`;
 			}
-			fullReport.push(fullSection + "\n");
+			fullReport.push(`${fullSection}\n`);
 		}
 	}
 

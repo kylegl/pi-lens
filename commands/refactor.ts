@@ -1,6 +1,9 @@
 import * as nodeFs from "node:fs";
 import * as path from "node:path";
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type {
+	ExtensionAPI,
+	ExtensionContext,
+} from "@mariozechner/pi-coding-agent";
 import type { ArchitectClient } from "../clients/architect-client.js";
 import type { AstGrepClient } from "../clients/ast-grep-client.js";
 import type { ComplexityClient } from "../clients/complexity-client.js";
@@ -28,18 +31,37 @@ export async function handleRefactor(
 
 	ctx.ui.notify("🏗️ Scanning for architectural debt...", "info");
 
-	const configPath = path.join(process.cwd(), "rules", "ast-grep-rules", ".sgconfig.yml");
+	const configPath = path.join(
+		process.cwd(),
+		"rules",
+		"ast-grep-rules",
+		".sgconfig.yml",
+	);
 	const isTsProject = nodeFs.existsSync(path.join(targetPath, "tsconfig.json"));
 
-	const skipByFile = scanSkipViolations(clients.astGrep, configPath, targetPath, isTsProject, skipRules, ruleActions);
-	const metricsByFile = scanComplexityMetrics(clients.complexity, targetPath, isTsProject);
+	const skipByFile = scanSkipViolations(
+		clients.astGrep,
+		configPath,
+		targetPath,
+		isTsProject,
+		skipRules,
+		ruleActions,
+	);
+	const metricsByFile = scanComplexityMetrics(
+		clients.complexity,
+		targetPath,
+		isTsProject,
+	);
 	const architectViolations = clients.architect.hasConfig()
 		? scanArchitectViolations(clients.architect, targetPath)
 		: new Map<string, string[]>();
 	const scored = scoreFiles(skipByFile, metricsByFile, architectViolations);
 
 	if (scored.length === 0) {
-		ctx.ui.notify("✅ No architectural debt found — codebase is clean.", "info");
+		ctx.ui.notify(
+			"✅ No architectural debt found — codebase is clean.",
+			"info",
+		);
 		return;
 	}
 
@@ -49,18 +71,24 @@ export async function handleRefactor(
 	const metrics = metricsByFile.get(worstFile);
 	const archIssues = architectViolations.get(worstFile) ?? [];
 
-	const snippetResult = issues.length > 0 ? extractCodeSnippet(worstFile, issues[0].line) : null;
+	const snippetResult =
+		issues.length > 0 ? extractCodeSnippet(worstFile, issues[0].line) : null;
 	const snippet = snippetResult?.snippet ?? "";
 	const snippetStart = snippetResult?.start ?? 1;
 	const snippetEnd = snippetResult?.end ?? 1;
 
 	const ruleGroups = new Map<string, number>();
-	for (const i of issues) ruleGroups.set(i.rule, (ruleGroups.get(i.rule) ?? 0) + 1);
+	for (const i of issues)
+		ruleGroups.set(i.rule, (ruleGroups.get(i.rule) ?? 0) + 1);
 
 	const issuesSummary = [...ruleGroups.entries()]
-		.map(([r, n]) => `- \`${r}\` (×${n})${ruleActions[r] ? ` — ${ruleActions[r].note}` : ""}`)
+		.map(
+			([r, n]) =>
+				`- \`${r}\` (×${n})${ruleActions[r] ? ` — ${ruleActions[r].note}` : ""}`,
+		)
 		.join("\n");
-	const archSummary = archIssues.length > 0 ? archIssues.map((m) => `- ${m}`).join("\n") : "None";
+	const archSummary =
+		archIssues.length > 0 ? archIssues.map((m) => `- ${m}`).join("\n") : "None";
 	const metricsSummary = metrics
 		? `MI: ${metrics.mi.toFixed(1)}, Cognitive: ${metrics.cognitive}, Nesting: ${metrics.nesting}`
 		: "";
@@ -73,7 +101,9 @@ export async function handleRefactor(
 		metrics ? `**Complexity**: ${metricsSummary}` : "",
 		"",
 		issues.length > 0 ? `**Violations**:\n${issuesSummary}` : "",
-		archIssues.length > 0 ? `**Architectural rules violated**:\n${archSummary}` : "",
+		archIssues.length > 0
+			? `**Architectural rules violated**:\n${archSummary}`
+			: "",
 		"",
 		`**Code** (\`${relFile}\` lines ${snippetStart}–${snippetEnd}):`,
 		"```typescript",

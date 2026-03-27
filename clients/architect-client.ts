@@ -44,7 +44,6 @@ export interface FileArchitectResult {
 
 export class ArchitectClient {
 	private config: ArchitectConfig | null = null;
-	private configPath: string | null = null;
 	private isUserConfig: boolean = false;
 	private log: (msg: string) => void;
 
