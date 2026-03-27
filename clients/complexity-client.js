@@ -17,6 +17,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as ts from "typescript";
+import { isFileKind } from "./file-kinds.js";
 // --- Constants ---
 // Nodes that increase cyclomatic complexity
 const CYCLOMAL_NODES = new Set([
@@ -119,8 +120,7 @@ export class ComplexityClient {
      * Check if file is supported (TS/JS)
      */
     isSupportedFile(filePath) {
-        const ext = path.extname(filePath).toLowerCase();
-        return [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"].includes(ext);
+        return isFileKind(filePath, "jsts");
     }
     /**
      * Analyze complexity metrics for a file

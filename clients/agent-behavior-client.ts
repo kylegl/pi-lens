@@ -57,7 +57,10 @@ export class AgentBehaviorClient {
 		const now = Date.now();
 
 		// Track consecutive identical tools (thrashing)
-		if (toolName === this.lastToolName && now - this.lastToolTimestamp < THRASH_TIMEOUT_MS) {
+		if (
+			toolName === this.lastToolName &&
+			now - this.lastToolTimestamp < THRASH_TIMEOUT_MS
+		) {
 			this.consecutiveCount++;
 		} else {
 			this.consecutiveCount = 1;
@@ -85,7 +88,9 @@ export class AgentBehaviorClient {
 
 			if (!hasRecentRead && recentWindow.length > 0) {
 				// Count how many writes in the window without reads
-				const writesWithoutRead = recentWindow.filter((r) => WRITE_OPS.has(r.toolName)).length;
+				const writesWithoutRead = recentWindow.filter((r) =>
+					WRITE_OPS.has(r.toolName),
+				).length;
 
 				if (writesWithoutRead >= 2) {
 					warnings.push({
@@ -102,7 +107,10 @@ export class AgentBehaviorClient {
 
 			// Track edits per file
 			if (filePath) {
-				this.fileEditCount.set(filePath, (this.fileEditCount.get(filePath) ?? 0) + 1);
+				this.fileEditCount.set(
+					filePath,
+					(this.fileEditCount.get(filePath) ?? 0) + 1,
+				);
 			}
 		}
 

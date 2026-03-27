@@ -116,8 +116,13 @@ export function scanAstGrep(
 	isTsProject: boolean,
 	configPath: string,
 ): AstIssue[] {
-	const hasSg = nodeFs.existsSync(path.join(targetPath, "node_modules", ".bin", "sg")) ||
-		childProcess.spawnSync("npx", ["sg", "--version"], { encoding: "utf-8", timeout: 5000, shell: true }).status === 0;
+	const hasSg =
+		nodeFs.existsSync(path.join(targetPath, "node_modules", ".bin", "sg")) ||
+		childProcess.spawnSync("npx", ["sg", "--version"], {
+			encoding: "utf-8",
+			timeout: 5000,
+			shell: true,
+		}).status === 0;
 
 	if (!hasSg) return [];
 
@@ -171,7 +176,9 @@ export function scanAstGrep(
 		const line =
 			(item.labels?.[0]?.range?.start?.line ?? item.range?.start?.line ?? 0) +
 			1;
-		const relFile = path.relative(targetPath, item.file ?? "").replace(/\\/g, "/");
+		const relFile = path
+			.relative(targetPath, item.file ?? "")
+			.replace(/\\/g, "/");
 
 		if (shouldIgnoreFile(relFile, isTsProject)) continue;
 
@@ -197,7 +204,13 @@ export function scanBiomeIssues(
 
 	const checkResult = childProcess.spawnSync(
 		"npx",
-		["@biomejs/biome", "check", "--reporter=json", "--max-diagnostics=50", targetPath],
+		[
+			"@biomejs/biome",
+			"check",
+			"--reporter=json",
+			"--max-diagnostics=50",
+			targetPath,
+		],
 		{ encoding: "utf-8", timeout: 20000, shell: true },
 	);
 
@@ -239,9 +252,14 @@ export function scanSlop(
 			const fullPath = path.join(dir, entry.name);
 			if (entry.isDirectory()) {
 				if (
-					["node_modules", ".git", "dist", "build", ".next", ".pi-lens"].includes(
-						entry.name,
-					)
+					[
+						"node_modules",
+						".git",
+						"dist",
+						"build",
+						".next",
+						".pi-lens",
+					].includes(entry.name)
 				)
 					continue;
 				scanDir(fullPath);

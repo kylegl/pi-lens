@@ -29,10 +29,9 @@ export function initRefactorLoop(pi: ExtensionAPI) {
 				/✅ No architectural debt found/,
 				/No more files to refactor/,
 			],
-			completionPatterns: [
-				/✅ No architectural debt found/,
-			],
-			continuePrompt: "Continue to next worst offender with /lens-booboo-refactor --loop",
+			completionPatterns: [/✅ No architectural debt found/],
+			continuePrompt:
+				"Continue to next worst offender with /lens-booboo-refactor --loop",
 		});
 		// refactor auto-loop initialized silently
 	}

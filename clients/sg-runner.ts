@@ -29,7 +29,9 @@ export class SgRunner {
 	private log: (msg: string) => void;
 
 	constructor(verbose = false) {
-		this.log = verbose ? (msg: string) => console.error(`[sg-runner] ${msg}`) : () => {};
+		this.log = verbose
+			? (msg: string) => console.error(`[sg-runner] ${msg}`)
+			: () => {};
 	}
 
 	/**
@@ -61,7 +63,10 @@ export class SgRunner {
 
 			proc.on("error", (err: Error) => {
 				if (err.message.includes("ENOENT")) {
-					resolve({ matches: [], error: "ast-grep CLI not found. Install: npm i -D @ast-grep/cli" });
+					resolve({
+						matches: [],
+						error: "ast-grep CLI not found. Install: npm i -D @ast-grep/cli",
+					});
 				} else {
 					resolve({ matches: [], error: err.message });
 				}
@@ -71,7 +76,9 @@ export class SgRunner {
 				if (code !== 0 && !stdout.trim()) {
 					resolve({
 						matches: [],
-						error: stderr.includes("No files found") ? undefined : stderr.trim() || `Exit code ${code}`,
+						error: stderr.includes("No files found")
+							? undefined
+							: stderr.trim() || `Exit code ${code}`,
 					});
 					return;
 				}
@@ -112,7 +119,12 @@ export class SgRunner {
 	/**
 	 * Run a temporary rule scan (creates temp dir with rule file)
 	 */
-	tempScan(dir: string, ruleId: string, ruleYaml: string, timeout = 30000): SgMatch[] {
+	tempScan(
+		dir: string,
+		ruleId: string,
+		ruleYaml: string,
+		timeout = 30000,
+	): SgMatch[] {
 		const tmpDir = os.tmpdir();
 		const ts = Date.now();
 		const sessionDir = path.join(tmpDir, `pi-lens-temp-${ruleId}-${ts}`);
@@ -161,7 +173,9 @@ export class SgRunner {
 				: `${loc}: ${text}`;
 		});
 		if (matches.length > maxItems) {
-			lines.unshift(`Found ${matches.length} matches (showing first ${maxItems}):`);
+			lines.unshift(
+				`Found ${matches.length} matches (showing first ${maxItems}):`,
+			);
 		}
 		return lines.join("\n");
 	}

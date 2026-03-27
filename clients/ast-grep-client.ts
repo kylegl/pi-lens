@@ -174,14 +174,19 @@ message: found
 		pattern: string;
 		functions: Array<{ name: string; file: string; line: number }>;
 	}> {
-		const grouped = new Map<string, Array<{ name: string; file: string; line: number }>>();
+		const grouped = new Map<
+			string,
+			Array<{ name: string; file: string; line: number }>
+		>();
 
 		for (const item of matches) {
 			const name = this.extractFunctionName(item.text);
 			if (!name) continue;
 
 			const signature = this.normalizeFunction(item.text);
-			const line = (item.range?.start?.line || item.labels?.[0]?.range?.start?.line || 0) + 1;
+			const line =
+				(item.range?.start?.line || item.labels?.[0]?.range?.start?.line || 0) +
+				1;
 
 			const group = grouped.get(signature) ?? [];
 			group.push({ name, file: item.file, line });

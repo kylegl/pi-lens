@@ -156,7 +156,10 @@ export class DependencyChecker {
 		const hasChanged = !cached || !this.setsEqual(cached.imports, newImports);
 
 		// Update cache
-		this.importCache.set(normalized, { imports: newImports, timestamp: stat.mtimeMs });
+		this.importCache.set(normalized, {
+			imports: newImports,
+			timestamp: stat.mtimeMs,
+		});
 		return hasChanged;
 	}
 

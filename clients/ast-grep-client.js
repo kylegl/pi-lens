@@ -107,7 +107,8 @@ message: found
             if (!name)
                 continue;
             const signature = this.normalizeFunction(item.text);
-            const line = (item.range?.start?.line || item.labels?.[0]?.range?.start?.line || 0) + 1;
+            const line = (item.range?.start?.line || item.labels?.[0]?.range?.start?.line || 0) +
+                1;
             const group = grouped.get(signature) ?? [];
             group.push({ name, file: item.file, line });
             grouped.set(signature, group);

@@ -1,5 +1,5 @@
 /**
- * Biome Client for pi-local
+ * Biome Client for pi-lens
  *
  * All-in-one: formatting + linting for JS/TS/JSX/TSX/CSS/JSON
  * Replaces Prettier with 15-50x faster Rust-based tool.
@@ -11,6 +11,8 @@
 import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { isFileKind, type FileKind } from "./file-kinds.js";
+import { sanitizeBiomeOutput } from "./sanitize.js";
 
 // --- Types ---
 
@@ -79,17 +81,7 @@ export class BiomeClient {
 	 * Check if a file is supported by Biome
 	 */
 	isSupportedFile(filePath: string): boolean {
-		const ext = path.extname(filePath).toLowerCase();
-		return [
-			".js",
-			".jsx",
-			".ts",
-			".tsx",
-			".css",
-			".json",
-			".mjs",
-			".cjs",
-		].includes(ext);
+		return isFileKind(filePath, ["jsts", "json", "css"]);
 	}
 
 	// --- Internal helpers ---

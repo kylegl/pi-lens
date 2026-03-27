@@ -8,7 +8,10 @@
 import * as childProcess from "node:child_process";
 import * as nodeFs from "node:fs";
 import * as path from "node:path";
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type {
+	ExtensionAPI,
+	ExtensionContext,
+} from "@mariozechner/pi-coding-agent";
 import type { AstGrepClient } from "../clients/ast-grep-client.js";
 import type { BiomeClient } from "../clients/biome-client.js";
 import type { ComplexityClient } from "../clients/complexity-client.js";
@@ -120,7 +123,8 @@ function generatePlan(
 
 	// Check for no progress
 	const prevTotal = Object.values(prevCounts).reduce((a, b) => a + b, 0);
-	const noProgress = session.iteration > 1 && prevTotal === totalFixable && totalFixable > 0;
+	const noProgress =
+		session.iteration > 1 && prevTotal === totalFixable && totalFixable > 0;
 
 	// Completion/stopped messages
 	if (totalFixable === 0) {
@@ -137,17 +141,24 @@ function generatePlan(
 
 	// Build plan
 	const lines: string[] = [];
-	lines.push(`📋 BOOBOO FIX PLAN — Iteration ${session.iteration}/${MAX_ITERATIONS} (${totalFixable} fixable items remaining)`);
+	lines.push(
+		`📋 BOOBOO FIX PLAN — Iteration ${session.iteration}/${MAX_ITERATIONS} (${totalFixable} fixable items remaining)`,
+	);
 	lines.push("");
 
 	// Duplicates
 	if (filteredDups.length > 0) {
-		lines.push(`## 🔁 Duplicate code [${filteredDups.length} block(s)] — fix first`);
+		lines.push(
+			`## 🔁 Duplicate code [${filteredDups.length} block(s)] — fix first`,
+		);
 		lines.push("→ Extract duplicated blocks into shared utilities.");
 		for (const clone of filteredDups.slice(0, 5)) {
-			lines.push(`  - ${clone.lines} lines: \`${clone.fileA}:${clone.startA}\` ↔ \`${clone.fileB}:${clone.startB}\``);
+			lines.push(
+				`  - ${clone.lines} lines: \`${clone.fileA}:${clone.startA}\` ↔ \`${clone.fileB}:${clone.startB}\``,
+			);
 		}
-		if (filteredDups.length > 5) lines.push(`  ... and ${filteredDups.length - 5} more`);
+		if (filteredDups.length > 5)
+			lines.push(`  ... and ${filteredDups.length - 5} more`);
 		lines.push("");
 	}
 
@@ -155,9 +166,12 @@ function generatePlan(
 	if (filteredDeadCode.length > 0) {
 		lines.push(`## 🗑️ Dead code [${filteredDeadCode.length} item(s)]`);
 		for (const issue of filteredDeadCode.slice(0, 10)) {
-			lines.push(`  - [${issue.type}] \`${issue.name}\`${issue.file ? ` in ${issue.file}` : ""}`);
+			lines.push(
+				`  - [${issue.type}] \`${issue.name}\`${issue.file ? ` in ${issue.file}` : ""}`,
+			);
 		}
-		if (filteredDeadCode.length > 10) lines.push(`  ... and ${filteredDeadCode.length - 10} more`);
+		if (filteredDeadCode.length > 10)
+			lines.push(`  ... and ${filteredDeadCode.length - 10} more`);
 		lines.push("");
 	}
 
@@ -175,7 +189,8 @@ function generatePlan(
 			for (const issue of issues.slice(0, 10)) {
 				lines.push(`  - \`${issue.file}:${issue.line}\``);
 			}
-			if (issues.length > 10) lines.push(`  ... and ${issues.length - 10} more`);
+			if (issues.length > 10)
+				lines.push(`  ... and ${issues.length - 10} more`);
 			lines.push("");
 		}
 	}
@@ -186,7 +201,8 @@ function generatePlan(
 		for (const d of filteredBiome.slice(0, 5)) {
 			lines.push(`  - \`${d.file}:${d.line}\` [${d.rule}] ${d.message}`);
 		}
-		if (filteredBiome.length > 5) lines.push(`  ... and ${filteredBiome.length - 5} more`);
+		if (filteredBiome.length > 5)
+			lines.push(`  ... and ${filteredBiome.length - 5} more`);
 		lines.push("");
 	}
 
@@ -194,14 +210,20 @@ function generatePlan(
 	if (filteredSlop.length > 0) {
 		lines.push(`## 🤖 AI Slop indicators [${filteredSlop.length} files]`);
 		for (const { file, warnings } of filteredSlop.slice(0, 5)) {
-			lines.push(`  - \`${file}\`: ${warnings.map((w) => w.split(" — ")[0]).join(", ")}`);
+			lines.push(
+				`  - \`${file}\`: ${warnings.map((w) => w.split(" — ")[0]).join(", ")}`,
+			);
 		}
 		lines.push("");
 	}
 
 	lines.push("---");
-	lines.push('**ACTION REQUIRED**: Fix items above, then run `/lens-booboo-fix --loop` again.');
-	lines.push('Mark false positives with: `/lens-booboo-fix --false-positive "type:file:line"`');
+	lines.push(
+		"**ACTION REQUIRED**: Fix items above, then run `/lens-booboo-fix --loop` again.",
+	);
+	lines.push(
+		'Mark false positives with: `/lens-booboo-fix --false-positive "type:file:line"`',
+	);
 
 	return lines.join("\n");
 }
@@ -256,7 +278,10 @@ export async function handleFix(
 		if (!session.falsePositives.includes(falsePositiveId)) {
 			session.falsePositives.push(falsePositiveId);
 			saveSession(sessionFile, session);
-			ctx.ui.notify(`✅ Marked as false positive: "${falsePositiveId}"`, "info");
+			ctx.ui.notify(
+				`✅ Marked as false positive: "${falsePositiveId}"`,
+				"info",
+			);
 		}
 		return;
 	}
@@ -273,15 +298,27 @@ export async function handleFix(
 
 	// Auto-fix with Biome + Ruff
 	if (!pi.getFlag("no-biome") && clients.biome.isAvailable()) {
-		childProcess.spawnSync("npx", ["@biomejs/biome", "check", "--write", "--unsafe", targetPath], {
-			encoding: "utf-8",
-			timeout: 30000,
-			shell: true,
-		});
+		childProcess.spawnSync(
+			"npx",
+			["@biomejs/biome", "check", "--write", "--unsafe", targetPath],
+			{
+				encoding: "utf-8",
+				timeout: 30000,
+				shell: true,
+			},
+		);
 	}
 	if (!pi.getFlag("no-ruff") && clients.ruff.isAvailable()) {
-		childProcess.spawnSync("ruff", ["check", "--fix", targetPath], { encoding: "utf-8", timeout: 15000, shell: true });
-		childProcess.spawnSync("ruff", ["format", targetPath], { encoding: "utf-8", timeout: 15000, shell: true });
+		childProcess.spawnSync("ruff", ["check", "--fix", targetPath], {
+			encoding: "utf-8",
+			timeout: 15000,
+			shell: true,
+		});
+		childProcess.spawnSync("ruff", ["format", targetPath], {
+			encoding: "utf-8",
+			timeout: 15000,
+			shell: true,
+		});
 	}
 
 	// Run all scanners
@@ -303,7 +340,11 @@ export async function handleFix(
 	// Generate and send plan
 	const plan = generatePlan(results, session, isTsProject, prevCounts);
 	const planPath = path.join(process.cwd(), ".pi-lens", "fix-plan.md");
-	nodeFs.writeFileSync(planPath, `# Fix Plan — Iteration ${session.iteration}\n\n${plan}`, "utf-8");
+	nodeFs.writeFileSync(
+		planPath,
+		`# Fix Plan — Iteration ${session.iteration}\n\n${plan}`,
+		"utf-8",
+	);
 
 	ctx.ui.notify(`📄 Fix plan saved: ${planPath}`, "info");
 	pi.sendUserMessage(plan, { deliverAs: "followUp" });

@@ -119,13 +119,21 @@ export class CacheManager {
     readTurnState(cwd) {
         const statePath = getTurnStatePath(cwd);
         if (!fs.existsSync(statePath)) {
-            return { ...DEFAULT_TURN_STATE, files: {}, lastUpdated: new Date().toISOString() };
+            return {
+                ...DEFAULT_TURN_STATE,
+                files: {},
+                lastUpdated: new Date().toISOString(),
+            };
         }
         try {
             return JSON.parse(fs.readFileSync(statePath, "utf-8"));
         }
         catch {
-            return { ...DEFAULT_TURN_STATE, files: {}, lastUpdated: new Date().toISOString() };
+            return {
+                ...DEFAULT_TURN_STATE,
+                files: {},
+                lastUpdated: new Date().toISOString(),
+            };
         }
     }
     /**

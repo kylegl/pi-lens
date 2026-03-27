@@ -10,7 +10,9 @@ import * as os from "node:os";
 import * as path from "node:path";
 export class SgRunner {
     constructor(verbose = false) {
-        this.log = verbose ? (msg) => console.error(`[sg-runner] ${msg}`) : () => { };
+        this.log = verbose
+            ? (msg) => console.error(`[sg-runner] ${msg}`)
+            : () => { };
     }
     /**
      * Check if ast-grep CLI is available
@@ -38,7 +40,10 @@ export class SgRunner {
             proc.stderr.on("data", (data) => (stderr += data.toString()));
             proc.on("error", (err) => {
                 if (err.message.includes("ENOENT")) {
-                    resolve({ matches: [], error: "ast-grep CLI not found. Install: npm i -D @ast-grep/cli" });
+                    resolve({
+                        matches: [],
+                        error: "ast-grep CLI not found. Install: npm i -D @ast-grep/cli",
+                    });
                 }
                 else {
                     resolve({ matches: [], error: err.message });
@@ -48,7 +53,9 @@ export class SgRunner {
                 if (code !== 0 && !stdout.trim()) {
                     resolve({
                         matches: [],
-                        error: stderr.includes("No files found") ? undefined : stderr.trim() || `Exit code ${code}`,
+                        error: stderr.includes("No files found")
+                            ? undefined
+                            : stderr.trim() || `Exit code ${code}`,
                     });
                     return;
                 }

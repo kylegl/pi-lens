@@ -1,5 +1,5 @@
 /**
- * Ruff Client for pi-local
+ * Ruff Client for pi-lens
  *
  * Fast Python linting and formatting via Ruff CLI.
  * Replaces flake8, pylint, isort, black, pyupgrade.
@@ -11,6 +11,7 @@
 import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { isFileKind } from "./file-kinds.js";
 
 // --- Types ---
 
@@ -76,7 +77,7 @@ export class RuffClient {
 	 * Check if a file is a Python file
 	 */
 	isPythonFile(filePath: string): boolean {
-		return path.extname(filePath).toLowerCase() === ".py";
+		return isFileKind(filePath, "python");
 	}
 
 	/**

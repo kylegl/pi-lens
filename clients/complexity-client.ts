@@ -18,6 +18,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as ts from "typescript";
+import { isFileKind } from "./file-kinds.js";
 
 // --- Types ---
 
@@ -163,8 +164,7 @@ export class ComplexityClient {
 	 * Check if file is supported (TS/JS)
 	 */
 	isSupportedFile(filePath: string): boolean {
-		const ext = path.extname(filePath).toLowerCase();
-		return [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"].includes(ext);
+		return isFileKind(filePath, "jsts");
 	}
 
 	/**
@@ -187,7 +187,11 @@ export class ComplexityClient {
 	 */
 	private readAndParse(
 		filePath: string,
-	): { absolutePath: string; content: string; sourceFile: ts.SourceFile } | null {
+	): {
+		absolutePath: string;
+		content: string;
+		sourceFile: ts.SourceFile;
+	} | null {
 		const absolutePath = path.resolve(filePath);
 		if (!fs.existsSync(absolutePath)) return null;
 
@@ -282,7 +286,10 @@ export class ComplexityClient {
 		return {
 			avgLength: Math.round(sum(lengths) / lengths.length),
 			maxLength: Math.max(...lengths),
-			avgCyclomatic: Math.max(1, Math.round(sum(cyclomatics) / cyclomatics.length)),
+			avgCyclomatic: Math.max(
+				1,
+				Math.round(sum(cyclomatics) / cyclomatics.length),
+			),
 			maxCyclomatic: Math.max(1, Math.max(...cyclomatics)),
 		};
 	}

@@ -44,7 +44,12 @@ describe("CacheManager", () => {
 			manager.writeCache("jscpd", data, testDir);
 
 			// Manually set old timestamp
-			const metaPath = path.join(testDir, ".pi-lens", "cache", "jscpd.meta.json");
+			const metaPath = path.join(
+				testDir,
+				".pi-lens",
+				"cache",
+				"jscpd.meta.json",
+			);
 			const meta = JSON.parse(fs.readFileSync(metaPath, "utf-8"));
 			meta.timestamp = new Date(Date.now() - 60 * 60 * 1000).toISOString(); // 1 hour ago
 			fs.writeFileSync(metaPath, JSON.stringify(meta));
@@ -58,7 +63,12 @@ describe("CacheManager", () => {
 			manager.writeCache("madge", data, testDir);
 
 			// Cache is 45 min old
-			const metaPath = path.join(testDir, ".pi-lens", "cache", "madge.meta.json");
+			const metaPath = path.join(
+				testDir,
+				".pi-lens",
+				"cache",
+				"madge.meta.json",
+			);
 			const meta = JSON.parse(fs.readFileSync(metaPath, "utf-8"));
 			meta.timestamp = new Date(Date.now() - 45 * 60 * 1000).toISOString();
 			fs.writeFileSync(metaPath, JSON.stringify(meta));
@@ -120,8 +130,18 @@ describe("CacheManager", () => {
 		});
 
 		it("should add modified ranges and merge overlapping", () => {
-			manager.addModifiedRange(testFile("src/a.ts"), { start: 1, end: 10 }, false, testDir);
-			manager.addModifiedRange(testFile("src/a.ts"), { start: 8, end: 20 }, true, testDir);
+			manager.addModifiedRange(
+				testFile("src/a.ts"),
+				{ start: 1, end: 10 },
+				false,
+				testDir,
+			);
+			manager.addModifiedRange(
+				testFile("src/a.ts"),
+				{ start: 8, end: 20 },
+				true,
+				testDir,
+			);
 
 			const state = manager.readTurnState(testDir);
 			const key = "src/a.ts";
@@ -134,10 +154,20 @@ describe("CacheManager", () => {
 
 		it("should track imports_changed flag", () => {
 			// First edit without import change
-			manager.addModifiedRange(testFile("src/a.ts"), { start: 1, end: 5 }, false, testDir);
+			manager.addModifiedRange(
+				testFile("src/a.ts"),
+				{ start: 1, end: 5 },
+				false,
+				testDir,
+			);
 
 			// Second edit with import change
-			manager.addModifiedRange(testFile("src/a.ts"), { start: 10, end: 15 }, true, testDir);
+			manager.addModifiedRange(
+				testFile("src/a.ts"),
+				{ start: 10, end: 15 },
+				true,
+				testDir,
+			);
 
 			const state = manager.readTurnState(testDir);
 			expect(state.files["src/a.ts"].importsChanged).toBe(true);
@@ -162,7 +192,12 @@ describe("CacheManager", () => {
 		});
 
 		it("should clear turn state", () => {
-			manager.addModifiedRange(testFile("src/a.ts"), { start: 1, end: 10 }, true, testDir);
+			manager.addModifiedRange(
+				testFile("src/a.ts"),
+				{ start: 1, end: 10 },
+				true,
+				testDir,
+			);
 			manager.incrementTurnCycle(testDir);
 
 			manager.clearTurnState(testDir);
@@ -178,9 +213,24 @@ describe("CacheManager", () => {
 			// Clear any previous state from other tests
 			manager.clearTurnState(testDir);
 			// Now add our test files
-			manager.addModifiedRange(testFile("a.ts"), { start: 1, end: 10 }, false, testDir);
-			manager.addModifiedRange(testFile("b.ts"), { start: 5, end: 20 }, true, testDir);
-			manager.addModifiedRange(testFile("c.ts"), { start: 1, end: 5 }, true, testDir);
+			manager.addModifiedRange(
+				testFile("a.ts"),
+				{ start: 1, end: 10 },
+				false,
+				testDir,
+			);
+			manager.addModifiedRange(
+				testFile("b.ts"),
+				{ start: 5, end: 20 },
+				true,
+				testDir,
+			);
+			manager.addModifiedRange(
+				testFile("c.ts"),
+				{ start: 1, end: 5 },
+				true,
+				testDir,
+			);
 		});
 
 		it("should get all files for jscpd", () => {

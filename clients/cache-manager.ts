@@ -83,7 +83,11 @@ export class CacheManager {
 	/**
 	 * Read a scanner cache entry. Returns null if not found or stale.
 	 */
-	readCache<T>(scanner: string, cwd: string, maxAgeMs = DEFAULT_MAX_AGE_MS): CacheEntry<T> | null {
+	readCache<T>(
+		scanner: string,
+		cwd: string,
+		maxAgeMs = DEFAULT_MAX_AGE_MS,
+	): CacheEntry<T> | null {
 		const cachePath = path.join(getCacheDir(cwd), `${scanner}.json`);
 		const metaPath = path.join(getCacheDir(cwd), `${scanner}.meta.json`);
 
@@ -97,7 +101,9 @@ export class CacheManager {
 			const age = Date.now() - new Date(meta.timestamp).getTime();
 
 			if (age > maxAgeMs) {
-				this.log(`Cache stale: ${scanner} (age: ${Math.round(age / 1000)}s, max: ${maxAgeMs / 1000}s)`);
+				this.log(
+					`Cache stale: ${scanner} (age: ${Math.round(age / 1000)}s, max: ${maxAgeMs / 1000}s)`,
+				);
 				return null;
 			}
 
@@ -113,7 +119,12 @@ export class CacheManager {
 	/**
 	 * Write a scanner cache entry.
 	 */
-	writeCache<T>(scanner: string, data: T, cwd: string, extraMeta?: Partial<CacheMeta>): void {
+	writeCache<T>(
+		scanner: string,
+		data: T,
+		cwd: string,
+		extraMeta?: Partial<CacheMeta>,
+	): void {
 		const cacheDir = getCacheDir(cwd);
 		fs.mkdirSync(cacheDir, { recursive: true });
 
@@ -133,7 +144,11 @@ export class CacheManager {
 	/**
 	 * Check if a cache entry is fresh (exists and not expired).
 	 */
-	isCacheFresh(scanner: string, cwd: string, maxAgeMs = DEFAULT_MAX_AGE_MS): boolean {
+	isCacheFresh(
+		scanner: string,
+		cwd: string,
+		maxAgeMs = DEFAULT_MAX_AGE_MS,
+	): boolean {
 		const metaPath = path.join(getCacheDir(cwd), `${scanner}.meta.json`);
 		if (!fs.existsSync(metaPath)) return false;
 
@@ -172,13 +187,21 @@ export class CacheManager {
 	readTurnState(cwd: string): TurnState {
 		const statePath = getTurnStatePath(cwd);
 		if (!fs.existsSync(statePath)) {
-			return { ...DEFAULT_TURN_STATE, files: {}, lastUpdated: new Date().toISOString() };
+			return {
+				...DEFAULT_TURN_STATE,
+				files: {},
+				lastUpdated: new Date().toISOString(),
+			};
 		}
 
 		try {
 			return JSON.parse(fs.readFileSync(statePath, "utf-8"));
 		} catch {
-			return { ...DEFAULT_TURN_STATE, files: {}, lastUpdated: new Date().toISOString() };
+			return {
+				...DEFAULT_TURN_STATE,
+				files: {},
+				lastUpdated: new Date().toISOString(),
+			};
 		}
 	}
 

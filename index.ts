@@ -14,7 +14,12 @@ import { buildInterviewer } from "./clients/interviewer.js";
 import { JscpdClient } from "./clients/jscpd-client.js";
 import { KnipClient } from "./clients/knip-client.js";
 import { MetricsClient } from "./clients/metrics-client.js";
-import { captureSnapshot, captureSnapshots, getTrendSummary, formatTrendCell } from "./clients/metrics-history.js";
+import {
+	captureSnapshot,
+	captureSnapshots,
+	getTrendSummary,
+	formatTrendCell,
+} from "./clients/metrics-history.js";
 import { RuffClient } from "./clients/ruff-client.js";
 import { RustClient } from "./clients/rust-client.js";
 import { getSourceFiles } from "./clients/scan-utils.js";
@@ -46,15 +51,15 @@ function parseDiffRanges(diff: string): { start: number; end: number }[] {
 			changedLines.push(Number.parseInt(match[1], 10));
 		}
 	}
-	
+
 	if (changedLines.length === 0) return [];
-	
+
 	// Convert to ranges (merge adjacent lines)
 	const sorted = [...new Set(changedLines)].sort((a, b) => a - b);
 	const ranges: { start: number; end: number }[] = [];
 	let rangeStart = sorted[0];
 	let rangeEnd = sorted[0];
-	
+
 	for (const line of sorted.slice(1)) {
 		if (line <= rangeEnd + 1) {
 			rangeEnd = line;
@@ -65,7 +70,7 @@ function parseDiffRanges(diff: string): { start: number; end: number }[] {
 		}
 	}
 	ranges.push({ start: rangeStart, end: rangeEnd });
-	
+
 	return ranges;
 }
 
@@ -886,15 +891,22 @@ export default function (pi: ExtensionAPI) {
 
 		// Dead code scan — use cache if fresh
 		if (knipClient.isAvailable()) {
-			const cached = cacheManager.readCache<ReturnType<KnipClient["analyze"]>>("knip", cwd);
+			const cached = cacheManager.readCache<ReturnType<KnipClient["analyze"]>>(
+				"knip",
+				cwd,
+			);
 			if (cached) {
-				dbg(`session_start Knip: cache hit (${Math.round((Date.now() - new Date(cached.meta.timestamp).getTime()) / 1000)}s ago)`);
+				dbg(
+					`session_start Knip: cache hit (${Math.round((Date.now() - new Date(cached.meta.timestamp).getTime()) / 1000)}s ago)`,
+				);
 				const knipReport = knipClient.formatResult(cached.data);
 				if (knipReport) parts.push(knipReport);
 			} else {
 				const startMs = Date.now();
 				const knipResult = knipClient.analyze(cwd);
-				cacheManager.writeCache("knip", knipResult, cwd, { scanDurationMs: Date.now() - startMs });
+				cacheManager.writeCache("knip", knipResult, cwd, {
+					scanDurationMs: Date.now() - startMs,
+				});
 				const knipReport = knipClient.formatResult(knipResult);
 				dbg(`session_start Knip scan done`);
 				if (knipReport) parts.push(knipReport);
@@ -905,7 +917,10 @@ export default function (pi: ExtensionAPI) {
 
 		// Duplicate code detection — use cache if fresh
 		if (jscpdClient.isAvailable()) {
-			const cached = cacheManager.readCache<ReturnType<JscpdClient["scan"]>>("jscpd", cwd);
+			const cached = cacheManager.readCache<ReturnType<JscpdClient["scan"]>>(
+				"jscpd",
+				cwd,
+			);
 			if (cached) {
 				dbg(`session_start jscpd: cache hit`);
 				cachedJscpdClones = cached.data.clones;
@@ -915,7 +930,9 @@ export default function (pi: ExtensionAPI) {
 				const startMs = Date.now();
 				const jscpdResult = jscpdClient.scan(cwd);
 				cachedJscpdClones = jscpdResult.clones;
-				cacheManager.writeCache("jscpd", jscpdResult, cwd, { scanDurationMs: Date.now() - startMs });
+				cacheManager.writeCache("jscpd", jscpdResult, cwd, {
+					scanDurationMs: Date.now() - startMs,
+				});
 				const jscpdReport = jscpdClient.formatResult(jscpdResult);
 				dbg(`session_start jscpd scan done`);
 				if (jscpdReport) parts.push(jscpdReport);
@@ -926,7 +943,9 @@ export default function (pi: ExtensionAPI) {
 
 		// TypeScript type coverage — use cache if fresh
 		if (typeCoverageClient.isAvailable()) {
-			const cached = cacheManager.readCache<ReturnType<TypeCoverageClient["scan"]>>("type-coverage", cwd);
+			const cached = cacheManager.readCache<
+				ReturnType<TypeCoverageClient["scan"]>
+			>("type-coverage", cwd);
 			if (cached) {
 				dbg(`session_start type-coverage: cache hit`);
 				const tcReport = typeCoverageClient.formatResult(cached.data);
@@ -934,7 +953,9 @@ export default function (pi: ExtensionAPI) {
 			} else {
 				const startMs = Date.now();
 				const tcResult = typeCoverageClient.scan(cwd);
-				cacheManager.writeCache("type-coverage", tcResult, cwd, { scanDurationMs: Date.now() - startMs });
+				cacheManager.writeCache("type-coverage", tcResult, cwd, {
+					scanDurationMs: Date.now() - startMs,
+				});
 				const tcReport = typeCoverageClient.formatResult(tcResult);
 				dbg(`session_start type-coverage scan done`);
 				if (tcReport) parts.push(tcReport);
@@ -1054,34 +1075,54 @@ export default function (pi: ExtensionAPI) {
 	pi.on("tool_result", async (event) => {
 		// Track tool call for behavior analysis (all tool types)
 		const filePath = (event.input as { path?: string }).path;
-		const behaviorWarnings = agentBehaviorClient.recordToolCall(event.toolName, filePath);
+		const behaviorWarnings = agentBehaviorClient.recordToolCall(
+			event.toolName,
+			filePath,
+		);
 
 		if (event.toolName !== "write" && event.toolName !== "edit") {
-			dbg(`tool_result: skipped turn tracking - toolName="${event.toolName}" (not write/edit)`);
+			dbg(
+				`tool_result: skipped turn tracking - toolName="${event.toolName}" (not write/edit)`,
+			);
 			return;
 		}
 		if (!filePath) {
-			dbg(`tool_result: skipped turn tracking - no filePath for toolName="${event.toolName}"`);
+			dbg(
+				`tool_result: skipped turn tracking - no filePath for toolName="${event.toolName}"`,
+			);
 			return;
 		}
-		dbg(`tool_result: tracking turn state for ${event.toolName} on ${filePath}`);
+		dbg(
+			`tool_result: tracking turn state for ${event.toolName} on ${filePath}`,
+		);
 
 		// --- Track modified ranges in turn state for async jscpd/madge at turn_end ---
 		const cwd = projectRoot;
 		try {
 			const details = event.details as { diff?: string } | undefined;
-			dbg(`tool_result: details.diff=${details?.diff ? 'present' : 'missing'}, details keys: ${Object.keys(event.details || {}).join(', ')}`);
+			dbg(
+				`tool_result: details.diff=${details?.diff ? "present" : "missing"}, details keys: ${Object.keys(event.details || {}).join(", ")}`,
+			);
 			if (event.toolName === "edit" && details?.diff) {
 				const diff = details.diff;
-				dbg(`tool_result: diff content (first 500 chars): ${diff.substring(0, 500)}`);
+				dbg(
+					`tool_result: diff content (first 500 chars): ${diff.substring(0, 500)}`,
+				);
 				const ranges = parseDiffRanges(diff);
-				const importsChanged = /import\s/.test(diff) || /from\s+['"]/.test(diff);
-				dbg(`tool_result: parsed ${ranges.length} ranges, importsChanged=${importsChanged}`);
+				const importsChanged =
+					/import\s/.test(diff) || /from\s+['"]/.test(diff);
+				dbg(
+					`tool_result: parsed ${ranges.length} ranges, importsChanged=${importsChanged}`,
+				);
 				for (const range of ranges) {
-					dbg(`tool_result: adding range ${range.start}-${range.end} for ${filePath}`);
+					dbg(
+						`tool_result: adding range ${range.start}-${range.end} for ${filePath}`,
+					);
 					cacheManager.addModifiedRange(filePath, range, importsChanged, cwd);
 				}
-				dbg(`tool_result: turn state after add: ${JSON.stringify(cacheManager.readTurnState(cwd))}`);
+				dbg(
+					`tool_result: turn state after add: ${JSON.stringify(cacheManager.readTurnState(cwd))}`,
+				);
 			} else if (event.toolName === "write" && nodeFs.existsSync(filePath)) {
 				const content = nodeFs.readFileSync(filePath, "utf-8");
 				const lineCount = content.split("\n").length;
@@ -1550,7 +1591,9 @@ export default function (pi: ExtensionAPI) {
 
 		if (files.length === 0) return;
 
-		dbg(`turn_end: ${files.length} file(s) modified, cycles: ${turnState.turnCycles}/${turnState.maxCycles}`);
+		dbg(
+			`turn_end: ${files.length} file(s) modified, cycles: ${turnState.turnCycles}/${turnState.maxCycles}`,
+		);
 
 		// Max cycles guard — force through after N turns with unresolved issues
 		if (cacheManager.isMaxCyclesExceeded(cwd)) {
@@ -1600,7 +1643,9 @@ export default function (pi: ExtensionAPI) {
 		if (depChecker.isAvailable()) {
 			const madgeFiles = cacheManager.getFilesForMadge(cwd);
 			if (madgeFiles.length > 0) {
-				dbg(`turn_end: madge checking ${madgeFiles.length} file(s) for circular deps`);
+				dbg(
+					`turn_end: madge checking ${madgeFiles.length} file(s) for circular deps`,
+				);
 				for (const file of madgeFiles) {
 					const absPath = path.resolve(cwd, file);
 					const depResult = depChecker.checkFile(absPath);
@@ -1610,7 +1655,9 @@ export default function (pi: ExtensionAPI) {
 							.filter((p: string) => !absPath.endsWith(path.basename(p)));
 						const uniqueDeps = [...new Set(circularDeps)];
 						if (uniqueDeps.length > 0) {
-							parts.push(`🟡 Circular dependency in ${file}: imports ${uniqueDeps.join(", ")}`);
+							parts.push(
+								`🟡 Circular dependency in ${file}: imports ${uniqueDeps.join(", ")}`,
+							);
 						}
 					}
 				}

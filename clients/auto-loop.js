@@ -25,7 +25,11 @@ export function createAutoLoop(pi, config) {
     };
     const stop = (ctx, reason) => {
         const wasActive = state.active;
-        state = { active: false, iteration: 0, maxIterations: config.maxIterations };
+        state = {
+            active: false,
+            iteration: 0,
+            maxIterations: config.maxIterations,
+        };
         updateStatus(ctx);
         if (wasActive) {
             ctx.ui.notify(`✅ ${config.name} loop ${reason}`, "info");

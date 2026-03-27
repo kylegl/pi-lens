@@ -53,7 +53,11 @@ export function scanDeadCode(knip, targetPath, isTsProject) {
  */
 export function scanAstGrep(targetPath, isTsProject, configPath) {
     const hasSg = nodeFs.existsSync(path.join(targetPath, "node_modules", ".bin", "sg")) ||
-        childProcess.spawnSync("npx", ["sg", "--version"], { encoding: "utf-8", timeout: 5000, shell: true }).status === 0;
+        childProcess.spawnSync("npx", ["sg", "--version"], {
+            encoding: "utf-8",
+            timeout: 5000,
+            shell: true,
+        }).status === 0;
     if (!hasSg)
         return [];
     const result = childProcess.spawnSync("npx", [
@@ -101,7 +105,9 @@ export function scanAstGrep(targetPath, isTsProject, configPath) {
         const rule = item.ruleId || item.rule?.title || item.name || "unknown";
         const line = (item.labels?.[0]?.range?.start?.line ?? item.range?.start?.line ?? 0) +
             1;
-        const relFile = path.relative(targetPath, item.file ?? "").replace(/\\/g, "/");
+        const relFile = path
+            .relative(targetPath, item.file ?? "")
+            .replace(/\\/g, "/");
         if (shouldIgnoreFile(relFile, isTsProject))
             continue;
         astIssues.push({
@@ -119,7 +125,13 @@ export function scanAstGrep(targetPath, isTsProject, configPath) {
 export function scanBiomeIssues(biome, targetPath) {
     if (!biome.isAvailable())
         return [];
-    const checkResult = childProcess.spawnSync("npx", ["@biomejs/biome", "check", "--reporter=json", "--max-diagnostics=50", targetPath], { encoding: "utf-8", timeout: 20000, shell: true });
+    const checkResult = childProcess.spawnSync("npx", [
+        "@biomejs/biome",
+        "check",
+        "--reporter=json",
+        "--max-diagnostics=50",
+        targetPath,
+    ], { encoding: "utf-8", timeout: 20000, shell: true });
     const remainingBiome = [];
     try {
         const data = JSON.parse(checkResult.stdout ?? "{}");
@@ -153,7 +165,14 @@ export function scanSlop(complexity, targetPath, isTsProject) {
         for (const entry of nodeFs.readdirSync(dir, { withFileTypes: true })) {
             const fullPath = path.join(dir, entry.name);
             if (entry.isDirectory()) {
-                if (["node_modules", ".git", "dist", "build", ".next", ".pi-lens"].includes(entry.name))
+                if ([
+                    "node_modules",
+                    ".git",
+                    "dist",
+                    "build",
+                    ".next",
+                    ".pi-lens",
+                ].includes(entry.name))
                     continue;
                 scanDir(fullPath);
             }

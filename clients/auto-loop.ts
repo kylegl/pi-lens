@@ -10,7 +10,10 @@
  * registered early to catch agent_end events.
  */
 
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type {
+	ExtensionAPI,
+	ExtensionContext,
+} from "@mariozechner/pi-coding-agent";
 
 export interface LoopConfig {
 	/** Unique identifier for this loop instance (e.g., "fix", "refactor") */
@@ -33,7 +36,10 @@ export interface LoopState {
 	maxIterations: number;
 }
 
-export function createAutoLoop(pi: ExtensionAPI, config: LoopConfig): {
+export function createAutoLoop(
+	pi: ExtensionAPI,
+	config: LoopConfig,
+): {
 	start: (ctx: ExtensionContext) => void;
 	stop: (ctx: ExtensionContext, reason: string) => void;
 	getState: () => LoopState;
@@ -58,7 +64,11 @@ export function createAutoLoop(pi: ExtensionAPI, config: LoopConfig): {
 
 	const stop = (ctx: ExtensionContext, reason: string) => {
 		const wasActive = state.active;
-		state = { active: false, iteration: 0, maxIterations: config.maxIterations };
+		state = {
+			active: false,
+			iteration: 0,
+			maxIterations: config.maxIterations,
+		};
 		updateStatus(ctx);
 		if (wasActive) {
 			ctx.ui.notify(`✅ ${config.name} loop ${reason}`, "info");
@@ -110,8 +120,11 @@ export function createAutoLoop(pi: ExtensionAPI, config: LoopConfig): {
 		if (!ctx.hasUI) return;
 		if (!state.active) return;
 
-		const assistantMessages = event.messages.filter((m) => m.role === "assistant");
-		const lastAssistantMessage = assistantMessages[assistantMessages.length - 1];
+		const assistantMessages = event.messages.filter(
+			(m) => m.role === "assistant",
+		);
+		const lastAssistantMessage =
+			assistantMessages[assistantMessages.length - 1];
 
 		if (!lastAssistantMessage) {
 			stop(ctx, "stopped (no response)");
@@ -130,7 +143,9 @@ export function createAutoLoop(pi: ExtensionAPI, config: LoopConfig): {
 
 		// Check for completion patterns (explicit success)
 		if (config.completionPatterns) {
-			const hasCompletion = config.completionPatterns.some((p) => p.test(textContent));
+			const hasCompletion = config.completionPatterns.some((p) =>
+				p.test(textContent),
+			);
 			if (hasCompletion) {
 				complete(ctx, "completed successfully");
 				return;
@@ -153,7 +168,8 @@ export function createAutoLoop(pi: ExtensionAPI, config: LoopConfig): {
 
 		// Continue to next iteration - send command as follow-up
 		updateStatus(ctx);
-		const continueMsg = config.continuePrompt || `Run ${config.command} to continue.`;
+		const continueMsg =
+			config.continuePrompt || `Run ${config.command} to continue.`;
 		pi.sendUserMessage(
 			`🔄 Auto-loop (${state.iteration + 1}/${state.maxIterations}): ${continueMsg}`,
 			{ deliverAs: "followUp" },

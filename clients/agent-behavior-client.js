@@ -31,7 +31,8 @@ export class AgentBehaviorClient {
         const warnings = [];
         const now = Date.now();
         // Track consecutive identical tools (thrashing)
-        if (toolName === this.lastToolName && now - this.lastToolTimestamp < THRASH_TIMEOUT_MS) {
+        if (toolName === this.lastToolName &&
+            now - this.lastToolTimestamp < THRASH_TIMEOUT_MS) {
             this.consecutiveCount++;
         }
         else {
