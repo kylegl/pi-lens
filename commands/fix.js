@@ -147,7 +147,7 @@ function generatePlan(results, session, isTsProject, prevCounts) {
         lines.push("");
     }
     lines.push("---");
-    lines.push('**ACTION REQUIRED**: Fix items above, then run `/lens-booboo-fix --loop` again.');
+    lines.push("**ACTION REQUIRED**: Fix items above, then run `/lens-booboo-fix --loop` again.");
     lines.push('Mark false positives with: `/lens-booboo-fix --false-positive "type:file:line"`');
     return lines.join("\n");
 }
@@ -197,8 +197,16 @@ export async function handleFix(args, ctx, clients, pi, ruleActions) {
         });
     }
     if (!pi.getFlag("no-ruff") && clients.ruff.isAvailable()) {
-        childProcess.spawnSync("ruff", ["check", "--fix", targetPath], { encoding: "utf-8", timeout: 15000, shell: true });
-        childProcess.spawnSync("ruff", ["format", targetPath], { encoding: "utf-8", timeout: 15000, shell: true });
+        childProcess.spawnSync("ruff", ["check", "--fix", targetPath], {
+            encoding: "utf-8",
+            timeout: 15000,
+            shell: true,
+        });
+        childProcess.spawnSync("ruff", ["format", targetPath], {
+            encoding: "utf-8",
+            timeout: 15000,
+            shell: true,
+        });
     }
     // Run all scanners
     const prevCounts = { ...session.counts };

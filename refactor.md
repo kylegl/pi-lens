@@ -49,31 +49,34 @@ Based on analysis of pi-lens architecture and patterns from pi-formatter.
 
 ---
 
-### Phase 2: Declarative Dispatch (Medium Effort, High Impact)
+### Phase 2: Declarative Dispatch (Medium Effort, High Impact) ✅ IN PROGRESS
 
 **Goal**: Replace 500+ lines of if/else with declarative config
 
-#### 2.1 Tool Config Types (`clients/dispatch/types.ts` - NEW)
-- [ ] Define `ToolConfig` interface with: id, name, fileKinds, checkTool, autoFix, flags, mode
-- [ ] Define `ToolContext` interface: filePath, cwd, content, diff
-- [ ] Define `ToolResult` interface: errors, warnings, suggestions, blocked
+#### 2.1 Tool Config Types (`clients/dispatch/types.ts` - NEW) ✅
+- [x] Define `RunnerDefinition` interface with: id, appliesTo, priority, when, run
+- [x] Define `DispatchContext` interface: filePath, cwd, kind, pi, autofix, deltaMode
+- [x] Define `RunnerResult` interface: status, output, metrics
+- [x] Define `ToolPlan` and `RunnerGroup` interfaces
 
-#### 2.2 Core Tool Dispatcher (`clients/dispatch/dispatcher.ts` - NEW)
-- [ ] Create `createDispatcher(clients: ClientMap): Dispatcher`
-- [ ] Implement `dispatchTools(ctx: ToolContext): ToolResult`
-- [ ] Handle flag checking, availability checking, error aggregation
-- [ ] Support both "immediate" and "deferred" modes
+#### 2.2 Core Tool Dispatcher (`clients/dispatch/dispatcher.ts` - NEW) ✅
+- [x] Create `registerRunner()`, `getRunner()`, `getRunnersForKind()` registry
+- [x] Implement `dispatchForFile()` with plan-based execution
+- [x] Handle mode: "all", "fallback", "first-success"
+- [x] Support tool availability caching
 
-#### 2.3 Extract Tool Configs (`clients/dispatch/tools.ts` - NEW)
-- [ ] TypeScript LSP tool config
-- [ ] Biome tool config (lint + format)
-- [ ] Ruff tool config (lint + format)
-- [ ] ast-grep tool config
-- [ ] Go vet tool config
-- [ ] Rust cargo check tool config
-- [ ] Type safety tool config
+#### 2.3 Execution Plan (`clients/dispatch/plan.ts` - NEW) ✅
+- [x] Define `TOOL_PLANS` for each file kind (jsts, python, go, rust, etc.)
+- [x] Map runners to groups with modes
 
-#### 2.4 Refactor index.ts
+#### 2.4 Runner Implementations (`clients/dispatch/runners/*.ts` - NEW)
+- [ ] biome.ts runner ✅ (sample implementation)
+- [ ] ruff.ts runner
+- [ ] ast-grep.ts runner
+- [ ] ts-lsp.ts runner
+- [ ] type-safety.ts runner
+
+#### 2.5 Refactor index.ts
 - [ ] Extract ~400 lines from `tool_result` handler to use dispatcher
 - [ ] Extract ~100 lines from `tool_call` handler
 - [ ] Remove hardcoded tool checks, use dispatcher instead
