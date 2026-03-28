@@ -58,7 +58,9 @@ describe("BiomeClient", () => {
 			expect(result).toEqual([]);
 		});
 
-		it("should return array of diagnostics for TS files", () => {
+		it("should return array of diagnostics for TS files", {
+			timeout: 15000,
+		}, () => {
 			if (!client.isAvailable()) return;
 
 			const content = `

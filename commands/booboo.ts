@@ -40,7 +40,12 @@ export async function handleBooboo(
 	const targetPath = args.trim() || ctx.cwd || process.cwd();
 	ctx.ui.notify("🔍 Running full codebase review...", "info");
 
-	const parts: string[] = [];
+	// Summary counts for terminal display
+	const summaryItems: {
+		category: string;
+		count: number;
+		severity: "🔴" | "🟡" | "🟢" | "ℹ️";
+	}[] = [];
 	const fullReport: string[] = [];
 	const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
 	const reviewDir = path.join(process.cwd(), ".pi-lens", "reviews");
@@ -129,14 +134,11 @@ export async function handleBooboo(
 				}
 
 				if (issues.length > 0) {
-					let report = `[ast-grep] ${issues.length} issue(s) found:\n`;
-					for (const issue of issues.slice(0, 20)) {
-						report += `  L${issue.line}: ${issue.rule} — ${issue.message}\n`;
-					}
-					if (issues.length > 20) {
-						report += `  ... and ${issues.length - 20} more\n`;
-					}
-					parts.push(report);
+					summaryItems.push({
+						category: "ast-grep",
+						count: issues.length,
+						severity: issues.length > 10 ? "🔴" : "🟡",
+					});
 
 					let fullSection = `## ast-grep (Structural Issues)\n\n**${issues.length} issue(s) found**\n\n`;
 					fullSection +=
@@ -160,17 +162,11 @@ export async function handleBooboo(
 			"typescript",
 		);
 		if (similarGroups.length > 0) {
-			let report = `[Similar Functions] ${similarGroups.length} group(s) of structurally similar functions:\n`;
-			for (const group of similarGroups.slice(0, 5)) {
-				report += `  Pattern: ${group.functions.map((f) => f.name).join(", ")}\n`;
-				for (const fn of group.functions) {
-					report += `    ${fn.name} (${path.basename(fn.file)}:${fn.line})\n`;
-				}
-			}
-			if (similarGroups.length > 5) {
-				report += `  ... and ${similarGroups.length - 5} more groups\n`;
-			}
-			parts.push(report);
+			summaryItems.push({
+				category: "Similar Functions",
+				count: similarGroups.length,
+				severity: "🟡",
+			});
 
 			let fullSection = `## Similar Functions\n\n**${similarGroups.length} group(s) of structurally similar functions**\n\n`;
 			for (const group of similarGroups) {
@@ -252,7 +248,28 @@ export async function handleBooboo(
 		if (aiSlopIssues.length > 0) {
 			summary += `\n[AI Slop Indicators]\n${aiSlopIssues.join("\n")}`;
 		}
-		parts.push(summary);
+		// Add complexity summary items
+		if (lowMI.length > 0) {
+			summaryItems.push({
+				category: "Low MI",
+				count: lowMI.length,
+				severity: lowMI.some((f) => f.maintainabilityIndex < 20) ? "🔴" : "🟡",
+			});
+		}
+		if (highCognitive.length > 0) {
+			summaryItems.push({
+				category: "High Complexity",
+				count: highCognitive.length,
+				severity: "🟡",
+			});
+		}
+		if (aiSlopIssues.length > 0) {
+			summaryItems.push({
+				category: "AI Slop",
+				count: (aiSlopIssues.length / 2) | 0,
+				severity: "🟡",
+			}); // Each issue is 2 lines
+		}
 
 		let fullSection = `## Complexity Metrics\n\n**${results.length} file(s) scanned**\n\n`;
 		fullSection += `### Summary\n\n| Metric | Value |\n|--------|-------|\n| Avg Maintainability Index | ${avgMI.toFixed(1)} |\n| Min Maintainability Index | ${minMI.toFixed(1)} |\n| Avg Cognitive Complexity | ${avgCognitive.toFixed(1)} |\n| Max Cognitive Complexity | ${maxCognitive} |\n| Avg Cyclomatic Complexity | ${avgCyclomatic.toFixed(1)} |\n| Max Nesting Depth | ${maxNesting} |\n| Total Files | ${results.length} |\n\n`;
@@ -293,9 +310,12 @@ export async function handleBooboo(
 
 	// Part 4: TODOs
 	const todoResult = clients.todo.scanDirectory(targetPath);
-	const todoReport = clients.todo.formatResult(todoResult);
-	if (todoReport) {
-		parts.push(todoReport);
+	if (todoResult.items.length > 0) {
+		summaryItems.push({
+			category: "TODOs",
+			count: todoResult.items.length,
+			severity: "ℹ️",
+		});
 		let fullSection = `## TODOs / Annotations\n\n`;
 		if (todoResult.items.length > 0) {
 			fullSection += `**${todoResult.items.length} annotation(s) found**\n\n| Type | File | Line | Text |\n|------|------|------|------|\n`;
@@ -312,9 +332,12 @@ export async function handleBooboo(
 	// Part 5: Dead code
 	if (clients.knip.isAvailable()) {
 		const knipResult = clients.knip.analyze(targetPath);
-		const knipReport = clients.knip.formatResult(knipResult);
-		if (knipReport) {
-			parts.push(knipReport);
+		if (knipResult.issues.length > 0) {
+			summaryItems.push({
+				category: "Dead Code",
+				count: knipResult.issues.length,
+				severity: "🟡",
+			});
 			let fullSection = `## Dead Code (Knip)\n\n`;
 			if (knipResult.issues.length > 0) {
 				fullSection += `**${knipResult.issues.length} issue(s) found**\n\n| Type | Name | File |\n|------|------|------|\n`;
@@ -332,9 +355,12 @@ export async function handleBooboo(
 	// Part 6: Duplicate code
 	if (clients.jscpd.isAvailable()) {
 		const jscpdResult = clients.jscpd.scan(targetPath);
-		const jscpdReport = clients.jscpd.formatResult(jscpdResult);
-		if (jscpdReport) {
-			parts.push(jscpdReport);
+		if (jscpdResult.clones.length > 0) {
+			summaryItems.push({
+				category: "Duplicates",
+				count: jscpdResult.clones.length,
+				severity: "🟡",
+			});
 			let fullSection = `## Code Duplication (jscpd)\n\n`;
 			if (jscpdResult.clones.length > 0) {
 				fullSection += `**${jscpdResult.clones.length} duplicate block(s) found** (${jscpdResult.duplicatedLines}/${jscpdResult.totalLines} lines, ${jscpdResult.percentage.toFixed(1)}%)\n\n| File A | Line A | File B | Line B | Lines | Tokens |\n|--------|--------|--------|--------|-------|--------|\n`;
@@ -352,9 +378,13 @@ export async function handleBooboo(
 	// Part 7: Type coverage
 	if (clients.typeCoverage.isAvailable()) {
 		const tcResult = clients.typeCoverage.scan(targetPath);
-		const tcReport = clients.typeCoverage.formatResult(tcResult);
-		if (tcReport) {
-			parts.push(tcReport);
+		if (tcResult.percentage < 100) {
+			const untyped = tcResult.total - tcResult.typed;
+			summaryItems.push({
+				category: "Untyped",
+				count: untyped,
+				severity: tcResult.percentage < 90 ? "🟡" : "ℹ️",
+			});
 			let fullSection = `## Type Coverage\n\n**${tcResult.percentage.toFixed(1)}% typed** (${tcResult.typed}/${tcResult.total} identifiers)\n\n`;
 			if (tcResult.untypedLocations.length > 0) {
 				fullSection += `### Untyped Identifiers\n\n| File | Line | Column | Name |\n|------|------|--------|------|\n`;
@@ -370,9 +400,12 @@ export async function handleBooboo(
 	// Part 8: Circular deps
 	if (!pi.getFlag("no-madge") && clients.depChecker.isAvailable()) {
 		const { circular } = clients.depChecker.scanProject(targetPath);
-		const depReport = clients.depChecker.formatScanResult(circular);
-		if (depReport) {
-			parts.push(depReport);
+		if (circular.length > 0) {
+			summaryItems.push({
+				category: "Circular Deps",
+				count: circular.length,
+				severity: "🔴",
+			});
 			let fullSection = `## Circular Dependencies (Madge)\n\n**${circular.length} circular chain(s) found**\n\n`;
 			for (const dep of circular) {
 				fullSection += `- ${dep.path.join(" → ")}\n`;
@@ -418,9 +451,11 @@ export async function handleBooboo(
 		};
 		archScanDir(targetPath);
 		if (archViolations.length > 0) {
-			parts.push(
-				`🔴 ${archViolations.length} architectural violation(s) — fix before adding new code`,
-			);
+			summaryItems.push({
+				category: "Architectural",
+				count: archViolations.length,
+				severity: "🔴",
+			});
 			let fullSection = `## Architectural Rules\n\n**${archViolations.length} violation(s) found**\n\n`;
 			for (const v of archViolations) {
 				fullSection += `- **${v.file}**: ${v.message}\n`;
@@ -435,12 +470,18 @@ export async function handleBooboo(
 	const reportPath = path.join(reviewDir, `booboo-${timestamp}.md`);
 	nodeFs.writeFileSync(reportPath, mdReport, "utf-8");
 
-	if (parts.length === 0) {
+	// Build summary table for terminal
+	if (summaryItems.length === 0) {
 		ctx.ui.notify("✓ Code review clean — saved to .pi-lens/reviews/", "info");
 	} else {
-		ctx.ui.notify(
-			`${parts.join("\n\n")}\n\n📄 Full report: ${reportPath}`,
-			"info",
-		);
+		const totalIssues = summaryItems.reduce((sum, s) => sum + s.count, 0);
+		let summary = `📊 Code Review: ${summaryItems.length} categories, ${totalIssues} total issues\n`;
+		summary += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+		for (const item of summaryItems) {
+			summary += `${item.severity} ${item.category}: ${item.count}\n`;
+		}
+		summary += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+		summary += `📄 Full report: ${reportPath}`;
+		ctx.ui.notify(summary, "info");
 	}
 }
