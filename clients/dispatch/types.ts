@@ -70,7 +70,7 @@ export interface RunnerDefinition {
 	/** Unique identifier for this runner */
 	id: string;
 	/** File kinds this runner applies to */
-	appliesTo: FileKind[];
+	appliesTo: readonly FileKind[];
 	/** Priority (lower = runs first) */
 	priority?: number;
 	/** Whether this runner should be enabled by default */
