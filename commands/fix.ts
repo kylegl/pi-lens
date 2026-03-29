@@ -183,56 +183,68 @@ function generatePlan(
 
 	nodeFs.writeFileSync(reportPath, tsvRows.join("\n"), "utf-8");
 
-	// --- Build compact summary for terminal ---
+	// --- Build actionable list for terminal (no TSV reading needed) ---
 	const lines: string[] = [];
 	lines.push(
-		`📋 FIX PLAN — Iteration ${session.iteration}/${MAX_ITERATIONS} — ${totalFixable} issues`,
+		`📋 FIX PLAN — Iteration ${session.iteration}/${MAX_ITERATIONS} — ${totalFixable} issues:\n`,
 	);
-	lines.push(`📄 Full plan: .pi-lens/reports/fix-plan.tsv\n`);
 
-	// Summary by category with counts
+	// Duplicates
 	if (filteredDups.length > 0) {
-		lines.push(
-			`🔁 Duplicates: ${filteredDups.length} block(s) — extract to shared utils`,
-		);
-	}
-	if (filteredDeadCode.length > 0) {
-		lines.push(
-			`🗑️ Dead code: ${filteredDeadCode.length} item(s) — remove unused exports`,
-		);
-	}
-	if (agentTasks.length > 0) {
-		// Group by rule, show top 5 rules
-		const grouped = new Map<string, number>();
-		for (const t of agentTasks) {
-			grouped.set(t.rule, (grouped.get(t.rule) ?? 0) + 1);
+		for (const clone of filteredDups.slice(0, 10)) {
+			lines.push(
+				`🔁 ${clone.fileA}:${clone.startA} — ${clone.lines} dup from ${clone.fileB}:${clone.startB}`,
+			);
 		}
-		const sorted = [...grouped.entries()].sort((a, b) => b[1] - a[1]);
-		lines.push(`🔨 Lint: ${agentTasks.length} item(s)`);
-		for (const [rule, count] of sorted.slice(0, 5)) {
-			lines.push(`   ${rule}: ${count}`);
-		}
-		if (sorted.length > 5)
-			lines.push(`   ... and ${sorted.length - 5} more rules`);
-	}
-	if (filteredBiome.length > 0) {
-		lines.push(`🟠 Biome: ${filteredBiome.length} item(s) — auto-fixable`);
-	}
-	if (filteredSlop.length > 0) {
-		lines.push(
-			`🤖 AI Slop: ${filteredSlop.length} file(s) — review complexity`,
-		);
+		if (filteredDups.length > 10)
+			lines.push(`   ... +${filteredDups.length - 10} more`);
+		lines.push("");
 	}
 
-	lines.push("\n---");
+	// Dead code
+	if (filteredDeadCode.length > 0) {
+		for (const issue of filteredDeadCode.slice(0, 10)) {
+			lines.push(`🗑️ ${issue.file || issue.name} — ${issue.name} unused`);
+		}
+		if (filteredDeadCode.length > 10)
+			lines.push(`   ... +${filteredDeadCode.length - 10} more`);
+		lines.push("");
+	}
+
+	// AST lint
+	if (agentTasks.length > 0) {
+		for (const issue of agentTasks.slice(0, 15)) {
+			lines.push(`🔨 ${issue.file}:${issue.line} — ${issue.rule}`);
+		}
+		if (agentTasks.length > 15)
+			lines.push(`   ... +${agentTasks.length - 15} more`);
+		lines.push("");
+	}
+
+	// Biome
+	if (filteredBiome.length > 0) {
+		for (const issue of filteredBiome.slice(0, 10)) {
+			lines.push(`🟠 ${issue.file}:${issue.line} — ${issue.rule}`);
+		}
+		if (filteredBiome.length > 10)
+			lines.push(`   ... +${filteredBiome.length - 10} more`);
+		lines.push("");
+	}
+
+	// AI Slop
+	if (filteredSlop.length > 0) {
+		for (const { file, warnings } of filteredSlop.slice(0, 5)) {
+			lines.push(`🤖 ${file} — ${warnings[0]}`);
+		}
+		if (filteredSlop.length > 5)
+			lines.push(`   ... +${filteredSlop.length - 5} more`);
+		lines.push("");
+	}
+
+	lines.push("---");
+	lines.push("🚀 Fix items above, then run `/lens-booboo-fix --loop`");
 	lines.push(
-		"📖 **Read plan**: `read .pi-lens/reports/fix-plan.tsv` for full details",
-	);
-	lines.push(
-		"🚀 **Fix & loop**: Fix items, then run `/lens-booboo-fix --loop`",
-	);
-	lines.push(
-		'🚫 **False positive**: `/lens-booboo-fix --false-positive "type:file:line"`',
+		'🚫 False positive: `/lens-booboo-fix --false-positive "type:file:line"`',
 	);
 
 	return lines.join("\n");

@@ -148,12 +148,14 @@ export async function handleRefactor(
 	// First violation line for quick reference
 	const firstViolationLine = issues.length > 0 ? issues[0].line : null;
 
-	// --- Compact terminal summary ---
+	// --- Full ranked list in terminal (agent won't read TSV) ---
 	const topFiles = scored
-		.slice(0, 5)
+		.slice(0, 15)
 		.map((f, i) => {
 			const name = path.relative(targetPath, f.file).replace(/\\/g, "/");
-			return `  ${i + 1}. ${name} (score: ${f.score})`;
+			const m = metricsByFile.get(f.file);
+			const mi = m ? `MI:${m.mi.toFixed(0)}` : "";
+			return `  ${i + 1}. ${name} (${f.score} pts${mi ? `, ${mi}` : ""})`;
 		})
 		.join("\n");
 
@@ -162,7 +164,7 @@ export async function handleRefactor(
 		"info",
 	);
 	console.log(
-		`\n📊 Top ${Math.min(scored.length, 5)} worst offenders:\n${topFiles}\n📄 Full ranked list: .pi-lens/reports/refactor-ranked.tsv\n`,
+		`\n📊 Ranked by debt score:\n${topFiles}${scored.length > 15 ? `\n  ... and ${scored.length - 15} more` : ""}\n`,
 	);
 
 	// --- Steer message for agent ---
@@ -179,7 +181,7 @@ export async function handleRefactor(
 			: "",
 		firstViolationLine ? `First violation at line ${firstViolationLine}` : "",
 		"",
-		`📄 Full details: .pi-lens/reports/refactor-ranked.tsv — read \`${relFile}\` when ready`,
+		`📄 Read \`${relFile}\` when ready to implement`,
 		"",
 		"**Your job**:",
 		"1. Analyze this code — what's the most impactful refactoring for this file?",
