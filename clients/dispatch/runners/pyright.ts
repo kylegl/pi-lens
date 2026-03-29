@@ -8,6 +8,8 @@
  */
 
 import { spawnSync } from "node:child_process";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import type {
 	Diagnostic,
 	DispatchContext,
@@ -17,17 +19,44 @@ import type {
 
 // Cache pyright availability check
 let pyrightAvailable: boolean | null = null;
+let pyrightCommand: string | null = null;
 
-function isPyrightAvailable(): boolean {
+/**
+ * Find pyright command, checking venv first, then global.
+ * Looks in .venv/bin, venv/bin (Unix), .venv/Scripts, venv/Scripts (Windows)
+ */
+function findPyrightCommand(cwd: string): string {
+	// Check common venv locations
+	const venvPaths = [
+		".venv/bin/pyright",
+		"venv/bin/pyright",
+		".venv/Scripts/pyright.exe",
+		"venv/Scripts/pyright.exe",
+	];
+
+	for (const venvPath of venvPaths) {
+		const fullPath = path.join(cwd, venvPath);
+		if (fs.existsSync(fullPath)) {
+			return `"${fullPath}"`; // Quote for Windows paths with spaces
+		}
+	}
+
+	// Fall back to global
+	return "pyright";
+}
+
+function isPyrightAvailable(cwd?: string): boolean {
 	if (pyrightAvailable !== null) return pyrightAvailable;
 
-	// Check if pyright CLI is available (do NOT auto-install via npx)
-	const check = spawnSync("pyright", ["--version"], {
+	const command = findPyrightCommand(cwd || process.cwd());
+
+	const check = spawnSync(command, ["--version"], {
 		encoding: "utf-8",
 		timeout: 5000,
 		shell: true,
 	});
 	pyrightAvailable = !check.error && check.status === 0;
+	if (pyrightAvailable) pyrightCommand = command;
 	return pyrightAvailable;
 }
 
@@ -39,12 +68,12 @@ const pyrightRunner: RunnerDefinition = {
 
 	async run(ctx: DispatchContext): Promise<RunnerResult> {
 		// Skip if pyright is not installed
-		if (!isPyrightAvailable()) {
+		if (!isPyrightAvailable(ctx.cwd || process.cwd())) {
 			return { status: "skipped", diagnostics: [], semantic: "none" };
 		}
 
-		// Run pyright with JSON output (use direct command, not npx)
-		const result = spawnSync("pyright", ["--outputjson", ctx.filePath], {
+		// Run pyright with JSON output (use venv-local or global command)
+		const result = spawnSync(pyrightCommand!, ["--outputjson", ctx.filePath], {
 			encoding: "utf-8",
 			timeout: 60000,
 			shell: true,
