@@ -298,6 +298,16 @@ All notable changes to pi-lens will be documented in this file.
 ### Changed
 - **Improved ast-grep tool descriptions**: Better pattern guidance to prevent overly broad searches.
 
+## [2.2.0] - 2026-03-29
+
+### Added
+- **`/lens-rate` command**: Visual code quality scoring across 6 dimensions (Type Safety, Complexity, Security, Architecture, Dead Code, Tests). Shows grade A-F and colored progress bars.
+- **Pyright runner**: Real Python type-checking via pyright. Catches type errors like `result: str = add(1, 2)` that ruff misses. Runs alongside ruff (pyright for types, ruff for linting).
+- **Vitest config**: Increased test timeout to 15s for CLI spawn tests. Fixes flaky test failures when npx downloads packages.
+
+### Fixed
+- **Test flakiness**: Availability tests (biome, knip, jscpd) no longer timeout when npx is downloading packages.
+
 ## [1.3.0] - 2026-03-23
 
 ### Changed

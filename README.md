@@ -16,6 +16,43 @@ pi install git:github.com/apmantza/pi-lens
 
 ---
 
+## What's New (v2.2)
+
+### `/lens-rate` — Code Quality Scoring
+
+Visual scoring breakdown across 6 dimensions with grade A-F:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  📊 CODE QUALITY SCORE: 85/100 (B)                      │
+├─────────────────────────────────────────────────────────┤
+│  🔷 Type Safety  🟩🟩🟩🟩🟩🟩🟩🟩⬜⬜  85 │
+│  🧩 Complexity   🟩🟩🟩🟩🟩🟩🟩🟩⬜⬜  82 │
+│  🔒 Security     🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩 100 │
+│  🏗️ Architecture  🟩🟩🟩🟩🟩🟩🟩🟩⬜⬜  80 │
+│  🗑️ Dead Code    🟩🟩🟩🟩🟩🟩🟩🟩🟩⬜  90 │
+│  ✅ Tests        🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩 100 │
+└─────────────────────────────────────────────────────────┘
+```
+
+Scores are calculated from real scan data: type-coverage, complexity metrics, secret detection, architect rules, knip, and test results.
+
+### Python Type-Checking (Pyright)
+
+Python files now get **real type-checking** via pyright, not just linting:
+
+```python
+# ruff won't catch this, but pyright will:
+def add(x: int, y: int) -> int:
+    return x + y
+
+result: str = add(1, 2)  # ❌ pyright: Type "int" not assignable to "str"
+```
+
+Pyright runs alongside ruff — pyright catches type errors, ruff catches style issues.
+
+---
+
 ## What's New (v2.1)
 
 ### Content-Level Secret Scanning
@@ -358,6 +395,7 @@ Each rule includes a `message` and `note` that are shown in diagnostics, so the 
 | `type-coverage` | `npm i -D type-coverage` | TypeScript `any` coverage percentage |
 | `madge` | `npm i -D madge` | Circular dependency detection |
 | `ruff` | `pip install ruff` | Python lint + format + autofix |
+| `pyright` | `npx pyright` (auto-installed) | Python type-checking |
 
 ---
 
