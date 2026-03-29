@@ -14,7 +14,6 @@
  * - BaselineStore: Track pre-existing issues for delta mode
  */
 
-import * as fs from "node:fs";
 import type { FileKind } from "../file-kinds.js";
 import { detectFileKind } from "../file-kinds.js";
 
@@ -51,9 +50,6 @@ export function createBaselineStore(): BaselineStore {
 // --- Runner Registry ---
 
 const globalRegistry = new Map<string, RunnerDefinition>();
-
-// Track last-run mtime per file+runner to skip unchanged files
-const lastRunMtimes = new Map<string, number>(); // key: `${runnerId}:${filePath}` -> mtimeMs
 
 export function registerRunner(runner: RunnerDefinition): void {
 	if (globalRegistry.has(runner.id)) {
@@ -311,22 +307,6 @@ async function runRunner(
 	runner: RunnerDefinition,
 	defaultSemantic: OutputSemantic,
 ): Promise<RunnerResult> {
-	// Skip if file unchanged (optimization for expensive runners)
-	if (runner.skipIfUnchanged) {
-		const cacheKey = `${runner.id}:${ctx.filePath}`;
-		try {
-			const stats = fs.statSync(ctx.filePath);
-			const lastMtime = lastRunMtimes.get(cacheKey);
-			if (lastMtime && stats.mtimeMs <= lastMtime) {
-				return { status: "skipped", diagnostics: [], semantic: "none" };
-			}
-			// Update mtime after run (below)
-			lastRunMtimes.set(cacheKey, stats.mtimeMs);
-		} catch {
-			// File doesn't exist or stat failed, continue with run
-		}
-	}
-
 	try {
 		const result = await runner.run(ctx);
 		return {
