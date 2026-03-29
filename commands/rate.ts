@@ -5,9 +5,15 @@
  * Uses existing scan data to calculate scores.
  */
 
-import * as fs from "node:fs";
+import * as childProcess from "node:child_process";
+import * as nodeFs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ArchitectClient } from "../clients/architect-client.js";
+import type { ComplexityClient } from "../clients/complexity-client.js";
+import type { KnipClient } from "../clients/knip-client.js";
+import { getSourceFiles } from "../clients/scan-utils.js";
+import type { TypeCoverageClient } from "../clients/type-coverage-client.js";
 
 interface CategoryScore {
 	name: string;
@@ -19,69 +25,248 @@ interface CategoryScore {
 interface RateResult {
 	overall: number;
 	categories: CategoryScore[];
-	fileCount: number;
+}
+
+interface ScanClients {
+	complexity: ComplexityClient;
+	knip: KnipClient;
+	typeCoverage: TypeCoverageClient;
+	architect: ArchitectClient;
 }
 
 /**
- * Calculate scores from scan results
+ * Run all scans and calculate scores
  */
-export function calculateScores(
-	typeCoverage: number, // 0-100
-	complexityScore: number, // 0-100
-	securityFindings: number, // count
-	archViolations: number, // count
-	deadCodeCount: number, // count
-	testPassRate: number, // 0-100
-): RateResult {
-	const categories: CategoryScore[] = [
+export async function gatherScores(
+	targetPath: string,
+	clients: ScanClients,
+): Promise<RateResult> {
+	const isTsProject = nodeFs.existsSync(path.join(targetPath, "tsconfig.json"));
+	const files = getSourceFiles(targetPath, isTsProject);
+	const categories: CategoryScore[] = [];
+
+	// ─── Type Safety ───
+	let typeCoverageScore = 100;
+	const typeIssues: string[] = [];
+
+	if (clients.typeCoverage.isAvailable()) {
+		const result = clients.typeCoverage.scan(targetPath);
+		if (result.success) {
+			typeCoverageScore = result.percentage;
+			if (result.percentage < 90) {
+				typeIssues.push(`${result.total - result.typed} untyped identifiers`);
+			}
+		}
+	}
+	categories.push({
+		name: "Type Safety",
+		score: Math.round(typeCoverageScore),
+		icon: "🔷",
+		issues: typeIssues,
+	});
+
+	// ─── Complexity ───
+	let complexityScore = 100;
+	const complexityIssues: string[] = [];
+
+	let totalScore = 0;
+	let fileCount = 0;
+	let worstFile = "";
+	let worstScore = 100;
+
+	for (const file of files.slice(0, 50)) {
+		if (clients.complexity.isSupportedFile(file)) {
+			const metrics = clients.complexity.analyzeFile(file);
+			if (metrics) {
+				totalScore += metrics.maintainabilityIndex;
+				fileCount++;
+				if (metrics.maintainabilityIndex < worstScore) {
+					worstScore = metrics.maintainabilityIndex;
+					worstFile = path.basename(file);
+				}
+			}
+		}
+	}
+	if (fileCount > 0) {
+		complexityScore = totalScore / fileCount;
+		if (complexityScore < 70) {
+			complexityIssues.push(`High complexity: ${worstFile}`);
+		}
+	}
+	categories.push({
+		name: "Complexity",
+		score: Math.round(complexityScore),
+		icon: "🧩",
+		issues: complexityIssues,
+	});
+
+	// ─── Security ───
+	let securityScore = 100;
+	const securityIssues: string[] = [];
+	let secretsFound = 0;
+
+	// Check for secrets in source files
+	const secretPatterns = [
+		{ name: "API Key (sk-)", pattern: /sk-[a-zA-Z0-9]{20,}/ },
+		{ name: "GitHub Token", pattern: /ghp_[a-zA-Z0-9]{36}/ },
+		{ name: "AWS Key", pattern: /AKIA[A-Z0-9]{16}/ },
+		{ name: "Anthropic Key", pattern: /sk-ant-[a-zA-Z0-9]{20,}/ },
+		{ name: "OpenAI Key", pattern: /sk-proj-[a-zA-Z0-9]{20,}/ },
 		{
-			name: "Type Safety",
-			score: Math.round(typeCoverage),
-			icon: "🔷",
-			issues:
-				typeCoverage < 90 ? [`${Math.round(100 - typeCoverage)}% untyped`] : [],
-		},
-		{
-			name: "Complexity",
-			score: Math.round(complexityScore),
-			icon: "🧩",
-			issues: complexityScore < 70 ? ["High complexity files detected"] : [],
-		},
-		{
-			name: "Security",
-			score: Math.max(0, 100 - securityFindings * 20),
-			icon: "🔒",
-			issues:
-				securityFindings > 0 ? [`${securityFindings} secret(s) found`] : [],
-		},
-		{
-			name: "Architecture",
-			score: Math.max(0, 100 - archViolations * 15),
-			icon: "🏗️",
-			issues: archViolations > 0 ? [`${archViolations} rule violation(s)`] : [],
-		},
-		{
-			name: "Dead Code",
-			score: Math.max(0, 100 - deadCodeCount * 10),
-			icon: "🗑️",
-			issues: deadCodeCount > 0 ? [`${deadCodeCount} unused export(s)`] : [],
-		},
-		{
-			name: "Tests",
-			score: Math.round(testPassRate),
-			icon: "✅",
-			issues:
-				testPassRate < 100
-					? [`${Math.round(100 - testPassRate)}% failing`]
-					: [],
+			name: "Private Key",
+			pattern: /-----BEGIN (?:RSA |EC |DSA )?PRIVATE KEY-----/,
 		},
 	];
 
+	for (const file of files.slice(0, 100)) {
+		try {
+			const content = nodeFs.readFileSync(file, "utf-8");
+			for (const line of content.split("\n")) {
+				if (line.trim().startsWith("//") || line.trim().startsWith("#"))
+					continue;
+				for (const { name, pattern } of secretPatterns) {
+					if (pattern.test(line)) {
+						secretsFound++;
+						if (securityIssues.length < 3) {
+							securityIssues.push(`${name} in ${path.basename(file)}`);
+						}
+					}
+				}
+			}
+		} catch {
+			// Skip unreadable files
+		}
+	}
+	securityScore = Math.max(0, 100 - secretsFound * 15);
+	categories.push({
+		name: "Security",
+		score: securityScore,
+		icon: "🔒",
+		issues: securityIssues,
+	});
+
+	// ─── Architecture ───
+	let archScore = 100;
+	const archIssues: string[] = [];
+
+	clients.architect.loadConfig(targetPath);
+	if (clients.architect.hasConfig()) {
+		let archViolations = 0;
+		const scanDir = (dir: string) => {
+			for (const entry of nodeFs.readdirSync(dir, { withFileTypes: true })) {
+				const full = path.join(dir, entry.name);
+				if (entry.isDirectory()) {
+					if (
+						[
+							"node_modules",
+							".git",
+							"dist",
+							"build",
+							".next",
+							".pi-lens",
+						].includes(entry.name)
+					)
+						continue;
+					scanDir(full);
+				} else if (/\.(ts|tsx|js|jsx|py|go|rs)$/.test(entry.name)) {
+					const relPath = path.relative(targetPath, full).replace(/\\/g, "/");
+					const content = nodeFs.readFileSync(full, "utf-8");
+					const violations = clients.architect.checkFile(relPath, content);
+					archViolations += violations.length;
+					if (violations.length > 0 && archIssues.length < 3) {
+						archIssues.push(`${violations.length} in ${path.basename(full)}`);
+					}
+					const sizeV = clients.architect.checkFileSize(
+						relPath,
+						content.split("\n").length,
+					);
+					if (sizeV) archViolations++;
+				}
+			}
+		};
+		scanDir(targetPath);
+		archScore = Math.max(0, 100 - archViolations * 10);
+	}
+	categories.push({
+		name: "Architecture",
+		score: archScore,
+		icon: "🏗️",
+		issues: archIssues,
+	});
+
+	// ─── Dead Code ───
+	let deadCodeScore = 100;
+	const deadCodeIssues: string[] = [];
+
+	if (clients.knip.isAvailable()) {
+		const result = clients.knip.analyze(targetPath);
+		if (result.success) {
+			const unusedExports = result.unusedExports.length;
+			const unusedFiles = result.unusedFiles.length;
+			const total = unusedExports + unusedFiles;
+			deadCodeScore = Math.max(0, 100 - total * 3);
+			if (unusedExports > 0) {
+				deadCodeIssues.push(`${unusedExports} unused export(s)`);
+			}
+			if (unusedFiles > 0) {
+				deadCodeIssues.push(`${unusedFiles} unused file(s)`);
+			}
+		}
+	}
+	categories.push({
+		name: "Dead Code",
+		score: deadCodeScore,
+		icon: "🗑️",
+		issues: deadCodeIssues,
+	});
+
+	// ─── Tests ───
+	let testScore = 100;
+	const testIssues: string[] = [];
+
+	// Quick test run
+	try {
+		const testResult = childProcess.spawnSync(
+			"npx",
+			["vitest", "run", "--reporter=basic"],
+			{
+				encoding: "utf-8",
+				timeout: 60000,
+				shell: true,
+				cwd: targetPath,
+			},
+		);
+		if (testResult.status !== 0) {
+			const output = (testResult.stdout || "") + (testResult.stderr || "");
+			if (output.includes("failed")) {
+				// Count failing tests
+				const failMatch = output.match(/(\d+) failed/);
+				testScore = 50;
+				testIssues.push(
+					failMatch ? `${failMatch[1]} test(s) failing` : "Some tests failing",
+				);
+			} else {
+				testScore = 70;
+				testIssues.push("Tests timed out or errored");
+			}
+		}
+	} catch {
+		testScore = 70;
+		testIssues.push("Could not run tests");
+	}
+	categories.push({
+		name: "Tests",
+		score: testScore,
+		icon: "✅",
+		issues: testIssues,
+	});
+
+	// ─── Calculate Overall ───
 	const overall = Math.round(
 		categories.reduce((sum, c) => sum + c.score, 0) / categories.length,
 	);
 
-	return { overall, categories, fileCount: 0 };
+	return { overall, categories };
 }
 
 /**
@@ -112,9 +297,10 @@ export function formatRateResult(result: RateResult): string {
 	const lines: string[] = [];
 
 	lines.push("┌─────────────────────────────────────────────────────────┐");
-	lines.push(
-		`│  📊 CODE QUALITY SCORE: ${result.overall}/100 (${getGrade(result.overall)})${" ".repeat(Math.max(0, 22 - String(result.overall).length))}│`,
-	);
+	const gradeText = ` (${getGrade(result.overall)})`;
+	const scoreText = `📊 CODE QUALITY SCORE: ${result.overall}/100${gradeText}`;
+	const padding = Math.max(0, 55 - scoreText.length);
+	lines.push(`│  ${scoreText}${" ".repeat(padding)}│`);
 	lines.push("├─────────────────────────────────────────────────────────┤");
 
 	for (const cat of result.categories) {
@@ -150,81 +336,13 @@ export function formatRateResult(result: RateResult): string {
 /**
  * Handle /lens-rate command
  */
-export async function handleRate(ctx: ExtensionContext): Promise<string> {
-	const cwd = ctx.cwd || process.cwd();
-
-	// Gather metrics from existing scan data
-	// For now, return a message explaining the feature
-	// Full implementation would integrate with existing clients
-
-	const files = getSourceFiles(cwd);
-
-	return formatRateResult({
-		overall: 0,
-		fileCount: files.length,
-		categories: [
-			{
-				name: "Type Safety",
-				score: 0,
-				icon: "🔷",
-				issues: ["Run /lens-booboo to calculate"],
-			},
-			{
-				name: "Complexity",
-				score: 0,
-				icon: "🧩",
-				issues: ["Run /lens-booboo to calculate"],
-			},
-			{
-				name: "Security",
-				score: 0,
-				icon: "🔒",
-				issues: ["Run /lens-booboo to calculate"],
-			},
-			{
-				name: "Architecture",
-				score: 0,
-				icon: "🏗️",
-				issues: ["Run /lens-booboo to calculate"],
-			},
-			{
-				name: "Dead Code",
-				score: 0,
-				icon: "🗑️",
-				issues: ["Run /lens-booboo to calculate"],
-			},
-			{
-				name: "Tests",
-				score: 0,
-				icon: "✅",
-				issues: ["Run /lens-booboo to calculate"],
-			},
-		],
-	});
-}
-
-function getSourceFiles(dir: string): string[] {
-	const files: string[] = [];
-	try {
-		for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-			const fullPath = path.join(dir, entry.name);
-			if (
-				entry.isDirectory() &&
-				!entry.name.startsWith(".") &&
-				entry.name !== "node_modules"
-			) {
-				files.push(...getSourceFiles(fullPath));
-			} else if (
-				entry.isFile() &&
-				/\.(ts|tsx|js|jsx|py|go|rs)$/.test(entry.name) &&
-				!entry.name.endsWith(".test.ts") &&
-				!entry.name.endsWith(".test.js")
-			) {
-				files.push(fullPath);
-			}
-		}
-	} catch {
-		// Ignore permission errors
-	}
-	return files;
+export async function handleRate(
+	args: string,
+	ctx: ExtensionContext,
+	clients: ScanClients,
+): Promise<string> {
+	const targetPath = args.trim() || ctx.cwd || process.cwd();
+	ctx.ui.notify("📊 Calculating code quality scores...", "info");
+	const result = await gatherScores(targetPath, clients);
+	return formatRateResult(result);
 }

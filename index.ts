@@ -622,10 +622,14 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerCommand("lens-rate", {
 		description:
-			"Show code quality score with visual breakdown. Usage: /lens-rate",
-		handler: async (_args, ctx) => {
-			ctx.ui.notify("📊 Calculating code quality score...", "info");
-			const result = await handleRate(ctx);
+			"Show code quality score with visual breakdown. Usage: /lens-rate [path]",
+		handler: async (args, ctx) => {
+			const result = await handleRate(args, ctx, {
+				complexity: complexityClient,
+				knip: knipClient,
+				typeCoverage: typeCoverageClient,
+				architect: architectClient,
+			});
 			ctx.ui.notify(result, "info");
 		},
 	});
