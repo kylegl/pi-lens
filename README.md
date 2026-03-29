@@ -16,6 +16,58 @@ pi install git:github.com/apmantza/pi-lens
 
 ---
 
+## Dependent Tools
+
+pi-lens works out of the box for TypeScript/JavaScript. For full language support, install these tools — **all are optional and gracefully skip if not installed**:
+
+### JavaScript / TypeScript
+
+| Tool | Install | What it does |
+|------|---------|--------------|
+| `@biomejs/biome` | `npm i -D @biomejs/biome` | Linting + formatting |
+| `knip` | `npm i -D knip` | Dead code / unused exports |
+| `jscpd` | `npm i -D jscpd` | Copy-paste detection |
+| `type-coverage` | `npm i -D type-coverage` | TypeScript `any` coverage % |
+
+### Python
+
+| Tool | Install | What it does |
+|------|---------|--------------|
+| `ruff` | `pip install ruff` | Linting + formatting |
+| `pyright` | `pip install pyright` | Type-checking (catches type errors) |
+
+### Go
+
+| Tool | Install | What it does |
+|------|---------|--------------|
+| `go` | [golang.org](https://golang.org) | Built-in `go vet` for static analysis |
+
+### Rust
+
+| Tool | Install | What it does |
+|------|---------|--------------|
+| `rust` + `clippy` | [rustup.rs](https://rustup.rs) | Linting via `cargo clippy` |
+
+### All Languages
+
+| Tool | Install | What it does |
+|------|---------|--------------|
+| `@ast-grep/cli` | `npm i -D @ast-grep/cli` | Structural pattern matching (80+ rules) |
+
+**Example setup for a TypeScript + Python project:**
+
+```bash
+# TypeScript tooling
+npm i -D @biomejs/biome knip jscpd type-coverage
+
+# Python tooling
+pip install ruff pyright
+```
+
+pi-lens automatically detects which tools are available and enables their runners accordingly.
+
+---
+
 ## What's New (v2.2)
 
 ### `/lens-rate` — Code Quality Scoring
@@ -381,21 +433,6 @@ Each rule includes a `message` and `note` that are shown in diagnostics, so the 
 
 **AI Slop Detection**
 `no-param-reassign`, `no-single-char-var`, `no-process-env`, `no-architecture-violation`
-
----
-
-## External dependencies summary
-
-| Package | Install | Purpose |
-|---|---|---|
-| `@biomejs/biome` | `npm i -D @biomejs/biome` | JS/TS/CSS/JSON lint + format + autofix |
-| `@ast-grep/cli` | `npm i -D @ast-grep/cli` | 60+ structural pattern rules |
-| `knip` | `npm i -D knip` | Unused exports, types, unlisted deps |
-| `jscpd` | `npm i -D jscpd` | Copy-paste / duplicate code detection |
-| `type-coverage` | `npm i -D type-coverage` | TypeScript `any` coverage percentage |
-| `madge` | `npm i -D madge` | Circular dependency detection |
-| `ruff` | `pip install ruff` | Python lint + format + autofix |
-| `pyright` | `pip install pyright` or `npm i -g pyright` | Python type-checking (optional, graceful skip if not installed) |
 
 ---
 
