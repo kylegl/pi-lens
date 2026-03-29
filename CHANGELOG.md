@@ -2,6 +2,23 @@
 
 All notable changes to pi-lens will be documented in this file.
 
+## [2.1.1] - 2026-03-29
+
+### Added
+- **Content-level secret scanning**: Catches secrets in ANY file type on write/edit (`.env`, `.yaml`, `.json`, not just TypeScript). Blocks before save with patterns for `sk-*`, `ghp_*`, `AKIA*`, private keys, hardcoded passwords.
+- **Project rules integration**: Scans for `.claude/rules/`, `.agents/rules/`, `CLAUDE.md`, `AGENTS.md` at session start and surfaces in system prompt.
+- **Grep-ability rules**: New ast-grep rules for `no-default-export` and `no-relative-cross-package-import` to improve agent searchability.
+
+### Changed
+- **Inline feedback stripped to blocking only**: Warnings no longer shown inline (noise). Only blocking violations and test failures interrupt the agent.
+- **booboo-fix output compacted**: Summary in terminal, full plan in `.pi-lens/reports/fix-plan.tsv`.
+- **booboo-refactor output compacted**: Top 5 worst offenders in terminal, full ranked list in `.pi-lens/reports/refactor-ranked.tsv`.
+- **`ast_grep_search` new params**: Added `selector` (extract specific AST node) and `context` (show surrounding lines).
+- **`ast_grep_replace` mode indicator**: Shows `[DRY-RUN]` or `[APPLIED]` prefix.
+- **no-hardcoded-secrets**: Fixed to only flag actual hardcoded strings (not `process.env` assignments).
+- **no-process-env**: Now only flags secret-related env vars (not PORT, NODE_ENV, etc.).
+- **Removed Factory AI article reference** from architect.yaml.
+
 ## [2.0.40] - 2026-03-27
 
 ### Changed

@@ -16,6 +16,37 @@ pi install git:github.com/apmantza/pi-lens
 
 ---
 
+## What's New (v2.1)
+
+### Content-Level Secret Scanning
+
+Secrets are now blocked **before** they're saved, on **all file types**:
+
+```
+🔴 STOP — 1 potential secret(s) in src/config.ts:
+  L12: Possible Stripe or OpenAI API key (sk-*)
+  → Remove before continuing. Use env vars instead.
+```
+
+Works on `.env`, `.yaml`, `.json`, `.md` — not just TypeScript. Catches `sk-*`, `ghp_*`, `AKIA*`, private keys, hardcoded passwords.
+
+### Compact Output
+
+Inline feedback stripped to **blocking only** — no more warning noise:
+
+```
+🔴 STOP — 2 issue(s) must fixed:
+  L23: var total = sum(items); — use 'let' or 'const'
+```
+
+Warnings are tracked and surfaced via `/lens-booboo`. booboo-fix and booboo-refactor output compacted to summaries with TSV files for full details.
+
+### Project Rules Integration
+
+Scans for `.claude/rules/`, `.agents/rules/`, `CLAUDE.md`, `AGENTS.md` at session start. Project-specific rules are surfaced in the system prompt — the agent knows to read them when relevant. Works alongside pi-lens architect rules.
+
+---
+
 ## What's New (v2.0)
 
 ### Declarative Dispatch System
