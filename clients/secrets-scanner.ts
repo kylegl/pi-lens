@@ -84,10 +84,37 @@ export interface SecretFinding {
 }
 
 /**
- * Scan content for potential secrets
- * Returns findings with line numbers
+ * Check if file path is a test file (should skip secrets scan)
  */
-export function scanForSecrets(content: string): SecretFinding[] {
+function isTestFile(filePath: string): boolean {
+	const normalized = filePath.replace(/\\/g, "/");
+	return (
+		normalized.includes(".test.") ||
+		normalized.includes(".spec.") ||
+		normalized.includes("/test/") ||
+		normalized.includes("/tests/") ||
+		normalized.includes("__tests__/") ||
+		normalized.includes("test-utils") ||
+		normalized.startsWith("test-") ||
+		normalized.includes(".fixture.") ||
+		normalized.includes(".mock.")
+	);
+}
+
+/**
+ * Scan content for potential secrets
+ * Returns findings with line numbers.
+ * Skips test files to avoid false positives.
+ */
+export function scanForSecrets(
+	content: string,
+	filePath?: string,
+): SecretFinding[] {
+	// Skip test files — secrets in tests are usually fake/test values
+	if (filePath && isTestFile(filePath)) {
+		return [];
+	}
+
 	const findings: SecretFinding[] = [];
 	const lines = content.split("\n");
 

@@ -1303,7 +1303,7 @@ export default function (pi: ExtensionAPI) {
 
 		// --- Secrets scan (blocking - must check before other linting) ---
 		if (fileContent) {
-			const secretFindings = scanForSecrets(fileContent);
+			const secretFindings = scanForSecrets(fileContent, filePath);
 			if (secretFindings.length > 0) {
 				const secretsOutput = formatSecrets(secretFindings, filePath);
 				return {
