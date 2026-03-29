@@ -38,6 +38,7 @@ import { TypeCoverageClient } from "./clients/type-coverage-client.js";
 import { TypeScriptClient } from "./clients/typescript-client.js";
 import { handleBooboo } from "./commands/booboo.js";
 import { handleFix } from "./commands/fix.js";
+import { handleRate } from "./commands/rate.js";
 import { handleRefactor, initRefactorLoop } from "./commands/refactor.js";
 
 /** Parse a diff to extract modified line ranges in the new file.
@@ -616,6 +617,16 @@ export default function (pi: ExtensionAPI) {
 			].join("\n");
 
 			ctx.ui.notify(summary, "info");
+		},
+	});
+
+	pi.registerCommand("lens-rate", {
+		description:
+			"Show code quality score with visual breakdown. Usage: /lens-rate",
+		handler: async (_args, ctx) => {
+			ctx.ui.notify("📊 Calculating code quality score...", "info");
+			const result = await handleRate(ctx);
+			ctx.ui.notify(result, "info");
 		},
 	});
 
