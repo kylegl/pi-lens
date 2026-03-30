@@ -51,6 +51,7 @@ import {
 	FileModified,
 	enableDebug as enableBusDebug,
 } from "./clients/bus/index.js";
+import { dispatchLintWithEffect } from "./clients/services/effect-integration.js";
 
 /** Parse a diff to extract modified line ranges in the new file.
  * Handles pi's custom diff format:
@@ -231,6 +232,12 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerFlag("lens-bus-debug", {
 		description: "Enable verbose bus event logging",
+		type: "boolean",
+		default: false,
+	});
+
+	pi.registerFlag("lens-effect", {
+		description: "Enable Effect-TS concurrent runner execution (Phase 2)",
 		type: "boolean",
 		default: false,
 	});
@@ -1186,10 +1193,18 @@ export default function (pi: ExtensionAPI) {
 		// Phase 2: Replaced ~400 lines of if/else with unified dispatch system
 		dbg(`dispatch: running lint tools for ${filePath}`);
 		
-		// Use bus-enabled dispatcher if flag is set (Phase 1)
-		const dispatchOutput = pi.getFlag("lens-bus")
-			? await dispatchLintWithBus(filePath, projectRoot, pi)
-			: await dispatchLint(filePath, projectRoot, pi);
+		// Select dispatcher based on flags:
+		// - lens-effect: Effect-TS concurrent execution (Phase 2)
+		// - lens-bus: Bus-enabled dispatcher (Phase 1)
+		// - default: Original sequential dispatcher
+		let dispatchOutput: string;
+		if (pi.getFlag("lens-effect")) {
+			dispatchOutput = await dispatchLintWithEffect(filePath, projectRoot, pi);
+		} else if (pi.getFlag("lens-bus")) {
+			dispatchOutput = await dispatchLintWithBus(filePath, projectRoot, pi);
+		} else {
+			dispatchOutput = await dispatchLint(filePath, projectRoot, pi);
+		}
 		
 		if (dispatchOutput) {
 			lspOutput += `\n\n${dispatchOutput}`;
