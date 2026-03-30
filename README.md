@@ -459,6 +459,26 @@ Scans file content for potential secrets using regex patterns:
 
 **Behavior:** Always blocking, always runs on all file types. Cannot be disabled or bypassed — security takes precedence over all other checks.
 
+### Agent Behavior Warnings
+
+**Not runners** — these are inline heuristics shown to the agent to catch anti-patterns in real-time.
+
+**Blind Write Detection**
+- **Triggers:** Agent edits a file without reading it in the last 5 tool calls
+- **Warning:** `⚠ BLIND WRITE — editing 'file.ts' without reading in the last 5 tool calls. Read the file first to avoid assumptions.`
+- **Why:** Prevents edits based on stale assumptions or hallucinated file contents
+
+**Thrashing Detection**
+- **Triggers:** 3+ consecutive identical tool calls (e.g., `edit`, `edit`, `edit`) within 30 seconds
+- **Warning:** `🔴 THRASHING — 3 consecutive 'edit' calls with no other action. Consider fixing the root cause instead of re-running.`
+- **Why:** Catches stuck loops where the agent repeats the same failed action
+
+**Edit Count Tracking**
+- Tracks how many times each file has been edited in the current session
+- Used for metrics and detecting "hot" files with churn
+
+**Behavior:** These warnings appear inline with lint results but do **not** block execution. They are guidance for the agent to self-correct.
+
 ---
 
 ## Exclusion Criteria
