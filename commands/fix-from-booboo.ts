@@ -59,6 +59,12 @@ export async function handleFixFromBooboo(
 	const reviewDir = path.join(targetPath, ".pi-lens", "reviews");
 	let latestReview: BoobooReview | null = null;
 
+	// Check if reviews directory exists
+	if (!nodeFs.existsSync(reviewDir)) {
+		ctx.ui.notify("❌ No /lens-booboo review found (no .pi-lens/reviews directory). Run `/lens-booboo` first.", "error");
+		return;
+	}
+
 	try {
 		const files = nodeFs.readdirSync(reviewDir);
 		const jsonFiles = files
@@ -72,11 +78,16 @@ export async function handleFixFromBooboo(
 		}
 
 		const latestReviewPath = path.join(reviewDir, jsonFiles[0]);
-		latestReview = JSON.parse(
-			nodeFs.readFileSync(latestReviewPath, "utf-8"),
-		) as BoobooReview;
-	} catch {
-		ctx.ui.notify("❌ No /lens-booboo review found. Run `/lens-booboo` first to scan for issues.", "error");
+		console.error(`[fix-from-booboo] Loading review: ${latestReviewPath}`);
+		
+		const fileContent = nodeFs.readFileSync(latestReviewPath, "utf-8");
+		console.error(`[fix-from-booboo] File size: ${fileContent.length} bytes`);
+		
+		latestReview = JSON.parse(fileContent) as BoobooReview;
+		console.error(`[fix-from-booboo] Parsed successfully, has meta: ${!!latestReview?.meta}`);
+	} catch (err) {
+		console.error("[fix-from-booboo] Error reading review:", err);
+		ctx.ui.notify(`❌ Error reading booboo review: ${err instanceof Error ? err.message : String(err)}`, "error");
 		return;
 	}
 
