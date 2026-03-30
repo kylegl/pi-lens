@@ -29,22 +29,6 @@ Every file write is automatically checked. Blocking issues appear inline:
 
 **Runners:** TypeScript type-checking, Python type-checking (pyright), linting (ruff, biome), secrets scan, architectural rules, slop detection.
 
-### Code Quality Analysis
-
-```
-/lens-booboo
-```
-
-Full codebase review covering:
-- **Part 1:** Design smells (ast-grep structural rules)
-- **Part 2:** Complexity metrics (MI, cognitive complexity, nesting)
-- **Part 3:** Dead code detection (knip)
-- **Part 4:** Copy-paste detection (jscpd)
-- **Part 5:** TODOs and technical debt
-- **Part 6:** Type coverage analysis
-- **Part 7:** Secret scanning
-- **Part 8:** Circular dependencies
-
 ### Automated Fixes
 
 ```

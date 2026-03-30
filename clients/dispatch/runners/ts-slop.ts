@@ -11,8 +11,11 @@
  */
 
 import { spawnSync } from "node:child_process";
-import * as fs from "node:fs";
-import * as path from "node:path";
+import { safeSpawn } from "../../safe-spawn.js";
+import {
+	createConfigFinder,
+	isSgAvailable,
+} from "./utils/runner-helpers.js";
 import type {
 	Diagnostic,
 	DispatchContext,
@@ -20,44 +23,7 @@ import type {
 	RunnerResult,
 } from "../types.js";
 
-// Cache availability check
-let sgAvailable: boolean | null = null;
-
-function isSgAvailable(): boolean {
-	if (sgAvailable !== null) return sgAvailable;
-
-	const check = spawnSync("npx", ["sg", "--version"], {
-		encoding: "utf-8",
-		timeout: 5000,
-		shell: process.platform === "win32",
-	});
-
-	sgAvailable = !check.error && check.status === 0;
-	return sgAvailable;
-}
-
-function findSlopConfig(cwd: string): string | undefined {
-	// Check for local config first
-	const localPath = path.join(cwd, "rules", "ts-slop-rules", ".sgconfig.yml");
-	if (fs.existsSync(localPath)) {
-		return localPath;
-	}
-
-	// Fall back to extension rules
-	const extensionPaths = [
-		"rules/ts-slop-rules/.sgconfig.yml",
-		"../rules/ts-slop-rules/.sgconfig.yml",
-	];
-
-	for (const candidate of extensionPaths) {
-		const fullPath = path.resolve(cwd, candidate);
-		if (fs.existsSync(fullPath)) {
-			return fullPath;
-		}
-	}
-
-	return undefined;
-}
+const findSlopConfig = createConfigFinder("ts-slop-rules");
 
 const tsSlopRunner: RunnerDefinition = {
 	id: "ts-slop",
@@ -83,10 +49,8 @@ const tsSlopRunner: RunnerDefinition = {
 		// Run ast-grep scan
 		const args = ["sg", "scan", "--config", configPath, "--json", ctx.filePath];
 
-		const result = spawnSync("npx", args, {
-			encoding: "utf-8",
+		const result = safeSpawn("npx", args, {
 			timeout: 30000,
-			shell: process.platform === "win32",
 		});
 
 		const raw = result.stdout + result.stderr;

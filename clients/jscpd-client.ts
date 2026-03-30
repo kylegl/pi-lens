@@ -12,6 +12,7 @@ import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { safeSpawn } from "./safe-spawn.js";
 
 // --- Types ---
 
@@ -44,10 +45,8 @@ export class JscpdClient {
 
 	isAvailable(): boolean {
 		if (this.available !== null) return this.available;
-		const result = spawnSync("npx", ["jscpd", "--version"], {
-			encoding: "utf-8",
+		const result = safeSpawn("npx", ["jscpd", "--version"], {
 			timeout: 5000,
-			shell: process.platform === "win32",
 		});
 		this.available = !result.error && result.status === 0;
 		return this.available;
@@ -96,7 +95,7 @@ export class JscpdClient {
 		fs.mkdirSync(outDir, { recursive: true });
 
 		try {
-			spawnSync(
+			safeSpawn(
 				"npx",
 				[
 					"jscpd",
@@ -113,10 +112,8 @@ export class JscpdClient {
 					"**/node_modules/**,**/dist/**,**/build/**,**/.git/**,**/.pi-lens/**,**/*.md,**/*.txt,**/*.json,**/*.yaml,**/*.yml,**/*.toml,**/*.lock,**/*.test.*,**/*.spec.*",
 				],
 				{
-					encoding: "utf-8",
 					timeout: 30000,
 					cwd,
-					shell: process.platform === "win32",
 				},
 			);
 

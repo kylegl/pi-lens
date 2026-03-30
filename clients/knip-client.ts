@@ -11,6 +11,7 @@
 
 import { spawnSync } from "node:child_process";
 import * as path from "node:path";
+import { safeSpawn } from "./safe-spawn.js";
 
 // --- Types ---
 
@@ -50,10 +51,8 @@ export class KnipClient {
 	isAvailable(): boolean {
 		if (this.knipAvailable !== null) return this.knipAvailable;
 
-		const result = spawnSync("npx", ["knip", "--version"], {
-			encoding: "utf-8",
+		const result = safeSpawn("npx", ["knip", "--version"], {
 			timeout: 10000,
-			shell: process.platform === "win32",
 		});
 
 		this.knipAvailable = !result.error && result.status === 0;
@@ -93,11 +92,9 @@ export class KnipClient {
 				args.push("--ignore", ignore.join(","));
 			}
 
-			const result = spawnSync("npx", args, {
-				encoding: "utf-8",
+			const result = safeSpawn("npx", args, {
 				timeout: 30000,
 				cwd: targetDir,
-				shell: process.platform === "win32",
 			});
 
 			// Knip exits 0 on success (even with issues), 1 on errors

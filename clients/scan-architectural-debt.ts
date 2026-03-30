@@ -9,6 +9,7 @@ import * as path from "node:path";
 import type { ArchitectClient } from "./architect-client.js";
 import type { AstGrepClient } from "./ast-grep-client.js";
 import type { ComplexityClient } from "./complexity-client.js";
+import { safeSpawn } from "./safe-spawn.js";
 import { getSourceFiles, parseAstGrepJson } from "./scan-utils.js";
 
 export type SkipIssue = { rule: string; line: number; note: string };
@@ -28,7 +29,7 @@ export function scanSkipViolations(
 	const skipByFile = new Map<string, SkipIssue[]>();
 	if (!astGrepClient.isAvailable()) return skipByFile;
 
-	const sgResult = spawnSync(
+	const sgResult = safeSpawn(
 		"npx",
 		[
 			"sg",
@@ -48,10 +49,7 @@ export function scanSkipViolations(
 			targetPath,
 		],
 		{
-			encoding: "utf-8",
 			timeout: 30000,
-			shell: process.platform === "win32",
-			maxBuffer: 32 * 1024 * 1024,
 		},
 	);
 

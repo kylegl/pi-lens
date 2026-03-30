@@ -12,6 +12,7 @@
 import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { safeSpawn } from "./safe-spawn.js";
 
 // --- Types ---
 
@@ -61,10 +62,8 @@ export class DependencyChecker {
 	isAvailable(): boolean {
 		if (this.available !== null) return this.available;
 
-		const result = spawnSync("npx", ["madge", "--version"], {
-			encoding: "utf-8",
+		const result = safeSpawn("npx", ["madge", "--version"], {
 			timeout: 5000,
-			shell: process.platform === "win32",
 		});
 
 		this.available = !result.error && result.status === 0;
@@ -223,7 +222,7 @@ export class DependencyChecker {
 
 		// Run madge on the specific file (fast)
 		try {
-			const result = spawnSync(
+			const result = safeSpawn(
 				"npx",
 				[
 					"madge",
@@ -234,10 +233,8 @@ export class DependencyChecker {
 					normalized,
 				],
 				{
-					encoding: "utf-8",
 					timeout: 15000,
 					cwd: projectRoot,
-					shell: process.platform === "win32",
 				},
 			);
 
@@ -323,7 +320,7 @@ export class DependencyChecker {
 		}
 
 		try {
-			const result = spawnSync(
+			const result = safeSpawn(
 				"npx",
 				[
 					"madge",
@@ -334,10 +331,8 @@ export class DependencyChecker {
 					projectRoot,
 				],
 				{
-					encoding: "utf-8",
 					timeout: 30000,
 					cwd: projectRoot,
-					shell: process.platform === "win32",
 				},
 			);
 

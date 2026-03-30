@@ -666,7 +666,7 @@ export default function (pi: ExtensionAPI) {
 	// Delta baselines: store pre-write diagnostics to diff against post-write
 	const astGrepBaselines = new Map<
 		string,
-		import("./clients/ast-grep-client.js").AstGrepDiagnostic[]
+		import("./clients/ast-grep-types.js").AstGrepDiagnostic[]
 	>();
 	const biomeBaselines = new Map<
 		string,

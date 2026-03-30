@@ -207,7 +207,13 @@ function hasItems(arr: string[]): boolean {
 			// Allow for minor issues - the length check might still trigger
 			expect(slopIssues.length).toBeLessThanOrEqual(1);
 		} finally {
-			fs.unlinkSync(tmpFile);
+			try {
+				if (fs.existsSync(tmpFile)) {
+					fs.unlinkSync(tmpFile);
+				}
+			} catch {
+				// Ignore cleanup errors
+			}
 		}
 	});
 });

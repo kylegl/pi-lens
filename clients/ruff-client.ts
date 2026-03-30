@@ -12,6 +12,7 @@ import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { isFileKind } from "./file-kinds.js";
+import { safeSpawn } from "./safe-spawn.js";
 
 // --- Types ---
 
@@ -56,10 +57,8 @@ export class RuffClient {
 		if (this.ruffAvailable !== null) return this.ruffAvailable;
 
 		try {
-			const result = spawnSync("ruff", ["--version"], {
-				encoding: "utf-8",
+			const result = safeSpawn("ruff", ["--version"], {
 				timeout: 5000,
-				shell: process.platform === "win32",
 			});
 			this.ruffAvailable = !result.error && result.status === 0;
 			if (this.ruffAvailable) {
@@ -90,7 +89,7 @@ export class RuffClient {
 		if (!fs.existsSync(absolutePath)) return [];
 
 		try {
-			const result = spawnSync(
+			const result = safeSpawn(
 				"ruff",
 				[
 					"check",
@@ -101,9 +100,7 @@ export class RuffClient {
 					absolutePath,
 				],
 				{
-					encoding: "utf-8",
 					timeout: 10000,
-					shell: process.platform === "win32",
 				},
 			);
 
@@ -128,13 +125,11 @@ export class RuffClient {
 		if (!fs.existsSync(absolutePath)) return "";
 
 		try {
-			const result = spawnSync(
+			const result = safeSpawn(
 				"ruff",
 				["format", "--check", "--diff", absolutePath],
 				{
-					encoding: "utf-8",
 					timeout: 10000,
-					shell: process.platform === "win32",
 				},
 			);
 
@@ -187,10 +182,8 @@ export class RuffClient {
 			const beforeDiags = this.checkFile(filePath);
 			const fixableCount = beforeDiags.filter((d) => d.fixable).length;
 
-			const result = spawnSync("ruff", ["check", "--fix", absolutePath], {
-				encoding: "utf-8",
+			const result = safeSpawn("ruff", ["check", "--fix", absolutePath], {
 				timeout: 15000,
-				shell: process.platform === "win32",
 			});
 
 			if (result.error) {
@@ -235,10 +228,8 @@ export class RuffClient {
 		const content = fs.readFileSync(absolutePath, "utf-8");
 
 		try {
-			const result = spawnSync("ruff", ["format", absolutePath], {
-				encoding: "utf-8",
+			const result = safeSpawn("ruff", ["format", absolutePath], {
 				timeout: 10000,
-				shell: process.platform === "win32",
 			});
 
 			if (result.error) {

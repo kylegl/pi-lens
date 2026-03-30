@@ -17,6 +17,7 @@
 import type { FileKind } from "../file-kinds.js";
 import { detectFileKind } from "../file-kinds.js";
 import { isTestFile } from "../file-utils.js";
+import { safeSpawn } from "../safe-spawn.js";
 
 import type {
 	BaselineStore,
@@ -96,11 +97,8 @@ function checkToolAvailability(command: string): boolean {
 		return toolCache.get(command)!;
 	}
 	try {
-		const { spawnSync } = require("node:child_process");
-		const result = spawnSync(command, ["--version"], {
-			encoding: "utf-8",
+		const result = safeSpawn(command, ["--version"], {
 			timeout: 5000,
-			shell: process.platform === "win32",
 		});
 		const available = result.status === 0;
 		toolCache.set(command, available);

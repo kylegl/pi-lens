@@ -10,6 +10,7 @@
 import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { safeSpawn } from "../../safe-spawn.js";
 import type {
 	Diagnostic,
 	DispatchContext,
@@ -47,10 +48,8 @@ const astGrepRunner: RunnerDefinition = {
 
 	async run(ctx: DispatchContext): Promise<RunnerResult> {
 		// Check if ast-grep is available (use npx for local installs)
-		const check = spawnSync("npx", ["sg", "--version"], {
-			encoding: "utf-8",
+		const check = safeSpawn("npx", ["sg", "--version"], {
 			timeout: 5000,
-			shell: process.platform === "win32",
 		});
 
 		if (check.error || check.status !== 0) {
@@ -66,10 +65,8 @@ const astGrepRunner: RunnerDefinition = {
 		// Run ast-grep scan on the file (use npx for local installs)
 		const args = ["sg", "scan", "--config", configPath, "--json", ctx.filePath];
 
-		const result = spawnSync("npx", args, {
-			encoding: "utf-8",
+		const result = safeSpawn("npx", args, {
 			timeout: 30000,
-			shell: process.platform === "win32",
 		});
 
 		const raw = result.stdout + result.stderr;

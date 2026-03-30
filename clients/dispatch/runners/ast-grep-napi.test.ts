@@ -97,7 +97,13 @@ function riskyOperation() {
 			}
 			
 		} finally {
-			fs.unlinkSync(tmpFile);
+			try {
+				if (fs.existsSync(tmpFile)) {
+					fs.unlinkSync(tmpFile);
+				}
+			} catch {
+				// Ignore cleanup errors
+			}
 		}
 	});
 
@@ -115,7 +121,13 @@ function riskyOperation() {
 			const result = await napiRunner.run(createMockContext(tmpFile, "python"));
 			expect(result.status).toBe("skipped");
 		} finally {
-			fs.unlinkSync(tmpFile);
+			try {
+				if (fs.existsSync(tmpFile)) {
+					fs.unlinkSync(tmpFile);
+				}
+			} catch {
+				// Ignore cleanup errors
+			}
 		}
 	});
 });

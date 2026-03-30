@@ -11,9 +11,16 @@
 import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import {
+	AstGrepDiagnostic,
+	AstGrepMatch,
+	RuleDescription,
+	SgMatch,
+} from "./ast-grep-types.js";
 import { AstGrepParser } from "./ast-grep-parser.js";
 import { AstGrepRuleManager } from "./ast-grep-rule-manager.js";
-import { type SgMatch, SgRunner } from "./sg-runner.js";
+import { safeSpawn } from "./safe-spawn.js";
+import { SgRunner } from "./sg-runner.js";
 
 const _getExtensionDir = () => {
 	if (typeof __dirname !== "undefined") {
@@ -21,46 +28,6 @@ const _getExtensionDir = () => {
 	}
 	return ".";
 };
-
-// --- Types ---
-
-export interface RuleDescription {
-	id: string;
-	message: string;
-	note?: string;
-	fix?: string;  // Suggested fix from rule
-	severity: "error" | "warning" | "info" | "hint";
-	grade?: number;
-}
-
-export interface AstGrepMatch {
-	file: string;
-	range: {
-		start: { line: number; column: number };
-		end: { line: number; column: number };
-	};
-	text: string;
-	replacement?: string;
-	labels?: Array<{
-		range: {
-			start: { line: number; column: number };
-			end: { line: number; column: number };
-		};
-	}>;
-}
-
-export interface AstGrepDiagnostic {
-	line: number;
-	column: number;
-	endLine: number;
-	endColumn: number;
-	severity: "error" | "warning" | "info" | "hint";
-	message: string;
-	rule: string;
-	ruleDescription?: RuleDescription;
-	file: string;
-	fix?: string;
-}
 
 // --- Client ---
 

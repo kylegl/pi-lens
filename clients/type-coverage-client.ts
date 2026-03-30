@@ -11,6 +11,7 @@
 
 import { spawnSync } from "node:child_process";
 import * as path from "node:path";
+import { safeSpawn } from "./safe-spawn.js";
 
 // --- Types ---
 
@@ -43,10 +44,8 @@ export class TypeCoverageClient {
 
 	isAvailable(): boolean {
 		if (this.available !== null) return this.available;
-		const result = spawnSync("npx", ["type-coverage", "--version"], {
-			encoding: "utf-8",
+		const result = safeSpawn("npx", ["type-coverage", "--version"], {
 			timeout: 10000,
-			shell: process.platform === "win32",
 		});
 		this.available = !result.error && result.status === 0;
 		return this.available;
@@ -69,7 +68,7 @@ export class TypeCoverageClient {
 		}
 
 		try {
-			const result = spawnSync(
+			const result = safeSpawn(
 				"npx",
 				[
 					"type-coverage",
@@ -79,10 +78,8 @@ export class TypeCoverageClient {
 					"**/*.d.ts",
 				],
 				{
-					encoding: "utf-8",
 					timeout: 30000,
 					cwd,
-					shell: process.platform === "win32",
 				},
 			);
 

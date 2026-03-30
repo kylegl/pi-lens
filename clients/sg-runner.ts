@@ -9,6 +9,7 @@ import { spawn, spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { safeSpawn } from "./safe-spawn.js";
 
 export interface SgMatch {
 	file: string;
@@ -38,10 +39,8 @@ export class SgRunner {
 	 * Check if ast-grep CLI is available
 	 */
 	isAvailable(): boolean {
-		const result = spawnSync("npx", ["sg", "--version"], {
-			encoding: "utf-8",
+		const result = safeSpawn("npx", ["sg", "--version"], {
 			timeout: 10000,
-			shell: process.platform === "win32",
 		});
 		return !result.error && result.status === 0;
 	}
@@ -51,10 +50,16 @@ export class SgRunner {
 	 */
 	async exec(args: string[]): Promise<SgResult> {
 		return new Promise((resolve) => {
-			const proc = spawn("npx", ["sg", ...args], {
-				stdio: ["ignore", "pipe", "pipe"],
-				shell: process.platform === "win32",
-			});
+			// On Windows, construct full command string to avoid deprecation warning
+			const useShell = process.platform === "win32";
+			const fullCommand = useShell
+				? `npx sg ${args.map((a) => (a.includes(" ") ? `"${a}"` : a)).join(" ")}`
+				: undefined;
+
+			const proc = fullCommand
+				? spawn(fullCommand, { stdio: ["ignore", "pipe", "pipe"], shell: true })
+				: spawn("npx", ["sg", ...args], { stdio: ["ignore", "pipe", "pipe"] });
+
 			let stdout = "";
 			let stderr = "";
 
@@ -101,11 +106,8 @@ export class SgRunner {
 	 * Run ast-grep synchronously (for simple scans)
 	 */
 	execSync(args: string[]): { output: string; error?: string } {
-		const result = spawnSync("npx", ["sg", ...args], {
-			encoding: "utf-8",
+		const result = safeSpawn("npx", ["sg", ...args], {
 			timeout: 30000,
-			shell: process.platform === "win32",
-			maxBuffer: 32 * 1024 * 1024,
 		});
 
 		if (result.error) {
@@ -137,10 +139,50 @@ export class SgRunner {
 			fs.writeFileSync(configFile, `ruleDirs:\n  - ./rules\n`);
 			fs.writeFileSync(ruleFile, ruleYaml);
 
-			const result = spawnSync(
+			const result = safeSpawn(
 				"npx",
 				["sg", "scan", "--config", configFile, "--json", dir],
-				{ encoding: "utf-8", timeout, shell: process.platform === "win32" },
+				{ timeout },
+			);
+
+			const output = result.stdout || result.stderr || "";
+			if (!output.trim()) return [];
+
+			const items = JSON.parse(output);
+			return Array.isArray(items) ? items : [items];
+		} catch {
+			return [];
+		} finally {
+			try {
+				fs.rmSync(sessionDir, { recursive: true, force: true });
+			} catch (err) {
+				this.log(`Cleanup failed: ${(err as Error).message}`);
+			}
+		}
+	}
+
+	/**
+	 * Run a rule file scan (temporary config approach) - alias for tempScan
+	 */
+	scanWithRule(
+		ruleYaml: string,
+		dir: string,
+		timeout = 30000,
+	): SgMatch[] {
+		const sessionDir = path.join(os.tmpdir(), `sg-scan-${Date.now()}`);
+		const rulesSubdir = path.join(sessionDir, "rules");
+		const configFile = path.join(sessionDir, ".sgconfig.yml");
+		const ruleFile = path.join(rulesSubdir, "rule.yml");
+
+		try {
+			fs.mkdirSync(rulesSubdir, { recursive: true });
+			fs.writeFileSync(configFile, `ruleDirs:\n  - ./rules\n`);
+			fs.writeFileSync(ruleFile, ruleYaml);
+
+			const result = safeSpawn(
+				"npx",
+				["sg", "scan", "--config", configFile, "--json", dir],
+				{ timeout },
 			);
 
 			const output = result.stdout || result.stderr || "";

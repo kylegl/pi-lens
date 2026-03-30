@@ -72,7 +72,13 @@ greet(123)
 			expect(result.diagnostics.some((d) => d.tool === "pyright")).toBe(true);
 			expect(result.diagnostics.some((d) => d.severity === "error")).toBe(true);
 		} finally {
-			fs.unlinkSync(tmpFile);
+			try {
+				if (fs.existsSync(tmpFile)) {
+					fs.unlinkSync(tmpFile);
+				}
+			} catch {
+				// Ignore cleanup errors
+			}
 		}
 	});
 
@@ -103,7 +109,13 @@ greet("world")
 			expect(result.status).toBe("succeeded");
 			expect(result.diagnostics.length).toBe(0);
 		} finally {
-			fs.unlinkSync(tmpFile);
+			try {
+				if (fs.existsSync(tmpFile)) {
+					fs.unlinkSync(tmpFile);
+				}
+			} catch {
+				// Ignore cleanup errors
+			}
 		}
 	});
 });

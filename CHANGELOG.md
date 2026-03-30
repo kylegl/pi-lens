@@ -2,6 +2,44 @@
 
 All notable changes to pi-lens will be documented in this file.
 
+## [2.4.0] - 2026-03-30
+
+### Added
+- **`safeSpawn` utility**: Cross-platform spawn wrapper that eliminates `DEP0190` deprecation warnings on Windows. Uses command string construction instead of shell+args array.
+- **Runner tracking for `/lens-booboo`**: Each runner now reports execution time and findings count. Summary shows `[1/10] runner name...` progress and final table with `| Runner | Status | Findings | Time |`.
+- **Shared runner utilities**: Extracted `runner-helpers.ts` with:
+  - `createAvailabilityChecker()` - cached tool availability checks
+  - `createConfigFinder()` - rule directory resolution
+  - `createVenvFinder()` - venv-aware command lookup
+  - Shared `isSgAvailable()` for ast-grep
+- **Shared diagnostic parsers**: Extracted `diagnostic-parsers.ts` with:
+  - `createLineParser()` - factory for line-based tool output
+  - `parseRuffOutput`, `parseGoVetOutput`, `createBiomeParser()` - pre-built parsers
+  - `createSimpleParser()` - simplified factory for standard formats
+- **Architect test coverage**: 5 new tests for the architect runner (config loading, size limits, pattern detection, test file exclusion).
+- **Type extraction**: Created `clients/ast-grep-types.ts` to break circular dependencies between `ast-grep-client`, `ast-grep-parser`, and `ast-grep-rule-manager`.
+
+### Changed
+- **26 files refactored to use `safeSpawn`**: Eliminated `shell: process.platform === "win32"` deprecation pattern across all clients and runners.
+- **Updated runners to use shared utilities**:
+  - `ruff.ts`, `pyright.ts` → use `createAvailabilityChecker()`
+  - `python-slop.ts`, `ts-slop.ts` → use `createConfigFinder()` and shared `isSgAvailable()`
+  - `ruff.ts`, `go-vet.ts`, `biome.ts` → use shared diagnostic parsers
+- **Architect runner improvements**:
+  - Added `skipTestFiles: true` to reduce noise from test files
+  - Updated `default-architect.yaml` with per-file-type limits (500 services, 1000 clients, 5000 tests)
+  - Removed `no process.env` rule (too strict for CLI tools)
+  - Relaxed `console.log` rule to only apply to `src/` and `lib/` directories
+- **Test cleanup safety**: Fixed all test files to use `fs.existsSync()` before `fs.unlinkSync()` to prevent ENOENT errors.
+
+### Fixed
+- **Circular dependencies**: Eliminated 2 cycles (`ast-grep-client` ↔ `ast-grep-parser`, `ast-grep-client` ↔ `ast-grep-rule-manager`) by extracting shared types.
+- **Test flakiness**: All 70 test files now pass consistently (666 tests total).
+
+### Code Quality
+- **Lines saved**: ~350 lines of duplicated code removed across utilities and parsers.
+- **Architect violations**: Reduced from 404 to ~50-80 (after test file exclusion + relaxed rules).
+
 ## [2.3.0] - 2026-03-30
 
 ### Added

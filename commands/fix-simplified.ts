@@ -8,6 +8,7 @@
 import * as childProcess from "node:child_process";
 import * as nodeFs from "node:fs";
 import * as path from "node:path";
+import { safeSpawn } from "../clients/safe-spawn.js";
 import type {
 	ExtensionAPI,
 	ExtensionContext,
@@ -251,13 +252,11 @@ function scanPythonSlop(filePath: string, cwd: string): SlopMatch[] {
 	if (!configPath) return matches;
 	
 	try {
-		const result = childProcess.spawnSync(
+		const result = safeSpawn(
 			"npx",
 			["sg", "scan", "--config", configPath, "--json", filePath],
 			{
-				encoding: "utf-8",
 				timeout: 30000,
-				shell: process.platform === "win32",
 			}
 		);
 		
@@ -306,13 +305,11 @@ function scanTsSlop(filePath: string, cwd: string): SlopMatch[] {
 	if (!configPath) return matches;
 	
 	try {
-		const result = childProcess.spawnSync(
+		const result = safeSpawn(
 			"npx",
 			["sg", "scan", "--config", configPath, "--json", filePath],
 			{
-				encoding: "utf-8",
 				timeout: 30000,
-				shell: process.platform === "win32",
 			}
 		);
 		
@@ -361,10 +358,8 @@ async function autoFixWithBiome(
 	const biomeArgs = ["check", "--write", "--unsafe", ...filesToFix];
 	
 	try {
-		const result = childProcess.spawnSync("biome", biomeArgs, {
-			encoding: "utf-8",
+		const result = safeSpawn("biome", biomeArgs, {
 			timeout: 60000,
-			shell: process.platform === "win32",
 		});
 
 		// Parse output to count fixed issues

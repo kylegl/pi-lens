@@ -8,6 +8,7 @@
 import * as childProcess from "node:child_process";
 import * as nodeFs from "node:fs";
 import * as path from "node:path";
+import { safeSpawn } from "../clients/safe-spawn.js";
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { ArchitectClient } from "../clients/architect-client.js";
 import type { ComplexityClient } from "../clients/complexity-client.js";
@@ -220,13 +221,11 @@ export async function gatherScores(
 
 	// Quick test run
 	try {
-		const testResult = childProcess.spawnSync(
+		const testResult = safeSpawn(
 			"npx",
 			["vitest", "run", "--reporter=basic"],
 			{
-				encoding: "utf-8",
 				timeout: 60000,
-				shell: process.platform === "win32",
 				cwd: targetPath,
 			},
 		);

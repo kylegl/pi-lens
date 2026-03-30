@@ -23,6 +23,7 @@ const architectRunner: RunnerDefinition = {
 	appliesTo: ["jsts", "python", "go", "rust", "cxx", "shell", "cmake"],
 	priority: 40,
 	enabledByDefault: true,
+	skipTestFiles: true, // Skip test files - rules can be noisy there
 
 	async run(ctx: DispatchContext): Promise<RunnerResult> {
 		const relPath = ctx.filePath.replace(ctx.cwd, "").replace(/\\/g, "/");

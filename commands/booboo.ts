@@ -1,6 +1,7 @@
 import * as childProcess from "node:child_process";
 import * as nodeFs from "node:fs";
 import * as path from "node:path";
+import { safeSpawn } from "../clients/safe-spawn.js";
 import type {
 	ExtensionAPI,
 	ExtensionContext,
@@ -16,6 +17,7 @@ import {
 	buildProjectIndex,
 	type ProjectIndex,
 } from "../clients/project-index.js";
+import { RunnerTracker } from "../clients/runner-tracker.js";
 import { getSourceFiles } from "../clients/scan-utils.js";
 import { calculateSimilarity } from "../clients/state-matrix.js";
 import type { TodoScanner } from "../clients/todo-scanner.js";
@@ -51,7 +53,7 @@ export async function handleBooboo(
 	let falsePositives: string[] = [];
 	try {
 		const sessionData = JSON.parse(
-			nodeFs.readFileSync(sessionFile, "utf-8") || "{}"
+			nodeFs.readFileSync(sessionFile, "utf-8") || "{}",
 		);
 		falsePositives = sessionData.falsePositives || [];
 	} catch {
@@ -59,11 +61,18 @@ export async function handleBooboo(
 	}
 
 	// Helper to check if an issue is marked as false positive
-	const isFalsePositive = (category: string, file: string, line?: number): boolean => {
-		const fpKey = line !== undefined 
-			? `${category}:${file}:${line}`
-			: `${category}:${file}`;
-		return falsePositives.some((fp) => fp === fpKey || fp.startsWith(`${category}:${file}`));
+	const isFalsePositive = (
+		category: string,
+		file: string,
+		line?: number,
+	): boolean => {
+		const fpKey =
+			line !== undefined
+				? `${category}:${file}:${line}`
+				: `${category}:${file}`;
+		return falsePositives.some(
+			(fp) => fp === fpKey || fp.startsWith(`${category}:${file}`),
+		);
 	};
 
 	// Summary counts for terminal display
@@ -71,24 +80,32 @@ export async function handleBooboo(
 		category: string;
 		count: number;
 		severity: "🔴" | "🟡" | "🟢" | "ℹ️";
-		fixable: boolean; // true = can be fixed via /lens-booboo-fix
+		fixable: boolean;
 	}[] = [];
 	const fullReport: string[] = [];
 	const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
 	const reviewDir = path.join(process.cwd(), ".pi-lens", "reviews");
 
-	// Helper to time each part
-	const timers: Record<string, number> = {};
-	const startTimer = (part: string) => { timers[part] = Date.now(); };
-	const getElapsed = (part: string) => {
-		const elapsed = Date.now() - (timers[part] || Date.now());
-		return elapsed < 1000 ? `${elapsed}ms` : `${(elapsed / 1000).toFixed(1)}s`;
-	};
+	// Initialize runner tracker
+	const tracker = new RunnerTracker({
+		onProgress: (runner, index) => {
+			ctx.ui.notify(
+				`🔍 [${index + 1}/9] ${runner.name}...`,
+				"info",
+			);
+		},
+	});
 
-	// Part 1: Design smells via ast-grep
-	startTimer("part1");
-	ctx.ui.notify("🔍 Part 1: Running ast-grep design smells...", "info");
-	if (clients.astGrep.isAvailable()) {
+	// Helper to format elapsed time
+	const formatElapsed = (ms: number): string =>
+		ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`;
+
+	// Runner 1: Design smells via ast-grep
+	await tracker.run("ast-grep (design smells)", async () => {
+		if (!clients.astGrep.isAvailable()) {
+			return { findings: 0, status: "skipped" };
+		}
+
 		const configPath = path.join(
 			getExtensionDir(),
 			"..",
@@ -98,7 +115,7 @@ export async function handleBooboo(
 		);
 
 		try {
-			const result = childProcess.spawnSync(
+			const result = safeSpawn(
 				"npx",
 				[
 					"sg",
@@ -133,10 +150,7 @@ export async function handleBooboo(
 					targetPath,
 				],
 				{
-					encoding: "utf-8",
 					timeout: 30000,
-					shell: process.platform === "win32",
-					maxBuffer: 32 * 1024 * 1024, // 32MB
 				},
 			);
 
@@ -154,16 +168,14 @@ export async function handleBooboo(
 					if (trimmed.startsWith("[")) {
 						try {
 							return JSON.parse(trimmed);
-						} catch (err) {
-							void err;
+						} catch {
 							return [];
 						}
 					}
 					return raw.split("\n").flatMap((l: string) => {
 						try {
 							return [JSON.parse(l)];
-						} catch (err) {
-							void err;
+						} catch {
 							return [];
 						}
 					});
@@ -188,11 +200,10 @@ export async function handleBooboo(
 					});
 				}
 
-				// Filter out false positives
-				const filteredIssues = issues.filter((issue) => 
-					!isFalsePositive("ast_issues", issue.file, issue.line)
+				const filteredIssues = issues.filter(
+					(issue) => !isFalsePositive("ast_issues", issue.file, issue.line),
 				);
-				
+
 				if (filteredIssues.length > 0) {
 					summaryItems.push({
 						category: "ast-grep",
@@ -207,39 +218,44 @@ export async function handleBooboo(
 					for (const issue of filteredIssues) {
 						fullSection += `| ${issue.line} | ${issue.rule} | ${issue.message} |\n`;
 					}
-					
-					// Add fix guidance for rules that have it
+
 					fullSection += "\n### 💡 How to Fix\n\n";
 					const seenRules = new Set<string>();
-					for (const issue of filteredIssues.slice(0, 5)) { // Show first 5 unique fixes
+					for (const issue of filteredIssues.slice(0, 5)) {
 						if (seenRules.has(issue.rule)) continue;
 						seenRules.add(issue.rule);
-						const ruleDesc = clients.astGrep.getRuleDescription?.(issue.rule);
+						const ruleDesc =
+							clients.astGrep.getRuleDescription?.(issue.rule);
 						if (ruleDesc?.note || ruleDesc?.fix) {
 							fullSection += `**${issue.rule}:**\n`;
 							if (ruleDesc.note) fullSection += `${ruleDesc.note}\n\n`;
-							if (ruleDesc.fix) fullSection += `Suggested fix:\n\`\`\`typescript\n${ruleDesc.fix}\n\`\`\`\n\n`;
+							if (ruleDesc.fix)
+								fullSection += `Suggested fix:\n\`\`\`typescript\n${ruleDesc.fix}\n\`\`\`\n\n`;
 						}
 					}
-					
+
 					fullReport.push(fullSection);
 				}
-			}
-			ctx.ui.notify(`✓ Part 1: Design smells (${summaryItems.find(s => s.category === "ast-grep")?.count ?? 0} issues, ${getElapsed("part1")})`, "info");
-		} catch (err) {
-			// Ast-grep scan failed, skip this section
-			void err;
-		}
-	}
 
-	// Part 2: Similar functions
-	startTimer("part2");
-	ctx.ui.notify("🔍 Part 2: Finding similar functions...", "info");
-	if (clients.astGrep.isAvailable()) {
+				return { findings: filteredIssues.length, status: "done" };
+			}
+			return { findings: 0, status: "done" };
+		} catch {
+			return { findings: 0, status: "error" };
+		}
+	});
+
+	// Runner 2: Similar functions
+	await tracker.run("ast-grep (similar functions)", async () => {
+		if (!clients.astGrep.isAvailable()) {
+			return { findings: 0, status: "skipped" };
+		}
+
 		const similarGroups = await clients.astGrep.findSimilarFunctions(
 			targetPath,
 			"typescript",
 		);
+
 		if (similarGroups.length > 0) {
 			summaryItems.push({
 				category: "Similar Functions",
@@ -260,30 +276,30 @@ export async function handleBooboo(
 			}
 			fullReport.push(fullSection);
 		}
-		const simCount = summaryItems.find(s => s.category === "Similar Functions")?.count ?? 0;
-		ctx.ui.notify(`✓ Part 2: Similar functions (${simCount} groups, ${getElapsed("part2")})`, "info");
-	}
 
-	// Part 2b: Semantic similarity (Amain 57×72 matrix)
-	try {
-		startTimer("part2b");
-		ctx.ui.notify("🔍 Analyzing semantic code similarity...", "info");
-		const { glob } = await import("glob");
-		const sourceFiles = await glob("**/*.ts", {
-			cwd: targetPath,
-			ignore: [
-				"**/node_modules/**",
-				"**/*.test.ts",
-				"**/*.spec.ts",
-				"**/dist/**",
-			],
-		});
+		return { findings: similarGroups.length, status: "done" };
+	});
 
-		if (sourceFiles.length > 0) {
+	// Runner 3: Semantic similarity
+	await tracker.run("semantic similarity (Amain)", async () => {
+		try {
+			const { glob } = await import("glob");
+			const sourceFiles = await glob("**/*.ts", {
+				cwd: targetPath,
+				ignore: [
+					"**/node_modules/**",
+					"**/*.test.ts",
+					"**/*.spec.ts",
+					"**/dist/**",
+				],
+			});
+
+			if (sourceFiles.length === 0) {
+				return { findings: 0, status: "done" };
+			}
+
 			const absoluteFiles = sourceFiles.map((f) => path.join(targetPath, f));
 			const index = await buildProjectIndex(targetPath, absoluteFiles);
-
-			// Find top similar pairs
 			const topPairs = findTopSimilarPairs(index, 10);
 
 			if (topPairs.length > 0) {
@@ -306,179 +322,178 @@ export async function handleBooboo(
 				}
 				fullReport.push(fullSection);
 			}
+
+			return { findings: topPairs.length, status: "done" };
+		} catch (err) {
+			console.error("[booboo] Semantic similarity analysis failed:", err);
+			return { findings: 0, status: "error" };
 		}
-		const semCount = summaryItems.find(s => s.category === "Semantic Duplicates")?.count ?? 0;
-		ctx.ui.notify(`✓ Part 2b: Semantic similarity (${semCount} pairs, ${getElapsed("part2b")})`, "info");
-	} catch (err) {
-		// Skip if similarity analysis fails
-		console.error("[booboo] Semantic similarity analysis failed:", err);
-	}
+	});
 
-	// Part 3: Complexity metrics
-	startTimer("part3");
-	ctx.ui.notify("🔍 Part 3: Analyzing complexity metrics...", "info");
-	const results: import("../clients/complexity-client.js").FileComplexity[] =
-		[];
-	const aiSlopIssues: string[] = [];
-	const isTsProject = nodeFs.existsSync(path.join(targetPath, "tsconfig.json"));
-	const files = getSourceFiles(targetPath, isTsProject);
+	// Runner 4: Complexity metrics
+	await tracker.run("complexity metrics", async () => {
+		const results: import("../clients/complexity-client.js").FileComplexity[] =
+			[];
+		const aiSlopIssues: string[] = [];
+		const isTsProject = nodeFs.existsSync(
+			path.join(targetPath, "tsconfig.json"),
+		);
+		const files = getSourceFiles(targetPath, isTsProject);
 
-	for (const fullPath of files) {
-		if (clients.complexity.isSupportedFile(fullPath)) {
-			const metrics = clients.complexity.analyzeFile(fullPath);
-			if (metrics) {
-				results.push(metrics);
-				if (!/\.(test|spec)\.[jt]sx?$/.test(path.basename(fullPath))) {
-					const warnings = clients.complexity.checkThresholds(metrics);
-					if (warnings.length > 0) {
-						aiSlopIssues.push(`  ${metrics.filePath}:`);
-						for (const w of warnings) {
-							aiSlopIssues.push(`    ⚠ ${w}`);
+		for (const fullPath of files) {
+			if (clients.complexity.isSupportedFile(fullPath)) {
+				const metrics = clients.complexity.analyzeFile(fullPath);
+				if (metrics) {
+					results.push(metrics);
+					if (!/\.(test|spec)\.[jt]sx?$/.test(path.basename(fullPath))) {
+						const warnings = clients.complexity.checkThresholds(metrics);
+						if (warnings.length > 0) {
+							aiSlopIssues.push(`  ${metrics.filePath}:`);
+							for (const w of warnings) {
+								aiSlopIssues.push(`    ⚠ ${w}`);
+							}
 						}
 					}
 				}
 			}
 		}
-	}
 
-	if (results.length > 0) {
-		const avgMI =
-			results.reduce((a, b) => a + b.maintainabilityIndex, 0) / results.length;
-		const avgCognitive =
-			results.reduce((a, b) => a + b.cognitiveComplexity, 0) / results.length;
-		const avgCyclomatic =
-			results.reduce((a, b) => a + b.cyclomaticComplexity, 0) / results.length;
-		const maxNesting = Math.max(...results.map((r) => r.maxNestingDepth));
-		const maxCognitive = Math.max(...results.map((r) => r.cognitiveComplexity));
-		const minMI = Math.min(...results.map((r) => r.maintainabilityIndex));
+		if (results.length > 0) {
+			const avgMI =
+				results.reduce((a, b) => a + b.maintainabilityIndex, 0) /
+				results.length;
+			const avgCognitive =
+				results.reduce((a, b) => a + b.cognitiveComplexity, 0) /
+				results.length;
+			const avgCyclomatic =
+				results.reduce((a, b) => a + b.cyclomaticComplexity, 0) /
+				results.length;
+			const maxNesting = Math.max(...results.map((r) => r.maxNestingDepth));
+			const maxCognitive = Math.max(...results.map((r) => r.cognitiveComplexity));
+			const minMI = Math.min(...results.map((r) => r.maintainabilityIndex));
 
-		const lowMI = results
-			.filter((r) => r.maintainabilityIndex < 60 && !isTestFile(r.filePath))
-			.sort((a, b) => a.maintainabilityIndex - b.maintainabilityIndex);
-		const highCognitive = results
-			.filter((r) => r.cognitiveComplexity > 20 && !isTestFile(r.filePath))
-			.sort((a, b) => b.cognitiveComplexity - a.cognitiveComplexity);
+			const lowMI = results
+				.filter((r) => r.maintainabilityIndex < 60 && !isTestFile(r.filePath))
+				.sort((a, b) => a.maintainabilityIndex - b.maintainabilityIndex);
+			const highCognitive = results
+				.filter((r) => r.cognitiveComplexity > 20 && !isTestFile(r.filePath))
+				.sort((a, b) => b.cognitiveComplexity - a.cognitiveComplexity);
 
-		let _summary = `[Complexity] ${results.length} file(s) scanned\n`;
-		_summary += `  Maintainability: ${avgMI.toFixed(1)} avg | Cognitive: ${avgCognitive.toFixed(1)} avg | Max Nesting: ${maxNesting} levels\n`;
+			let findings = 0;
 
-		if (lowMI.length > 0) {
-			_summary += `\n  Low Maintainability (MI < 60):\n`;
-			for (const f of lowMI.slice(0, 5)) {
-				_summary += `    ✗ ${f.filePath}: MI ${f.maintainabilityIndex.toFixed(1)}\n`;
+			if (lowMI.length > 0) {
+				findings += lowMI.length;
+				summaryItems.push({
+					category: "Low MI",
+					count: lowMI.length,
+					severity: lowMI.some((f) => f.maintainabilityIndex < 20)
+						? "🔴"
+						: "🟡",
+					fixable: false,
+				});
 			}
-			if (lowMI.length > 5)
-				_summary += `    ... and ${lowMI.length - 5} more\n`;
-		}
-
-		if (highCognitive.length > 0) {
-			_summary += `\n  High Cognitive Complexity (> 20):\n`;
-			for (const f of highCognitive.slice(0, 5)) {
-				_summary += `    ⚠ ${f.filePath}: ${f.cognitiveComplexity}\n`;
+			if (highCognitive.length > 0) {
+				findings += highCognitive.length;
+				summaryItems.push({
+					category: "High Complexity",
+					count: highCognitive.length,
+					severity: "🟡",
+					fixable: true,
+				});
 			}
-			if (highCognitive.length > 5)
-				_summary += `    ... and ${highCognitive.length - 5} more\n`;
+			if (aiSlopIssues.length > 0) {
+				findings += Math.floor(aiSlopIssues.length / 2);
+				summaryItems.push({
+					category: "AI Slop",
+					count: Math.floor(aiSlopIssues.length / 2),
+					severity: "🟡",
+					fixable: true,
+				});
+			}
+
+			let fullSection = `## Complexity Metrics\n\n**${results.length} file(s) scanned**\n\n`;
+			fullSection += `### Summary\n\n| Metric | Value |\n|--------|-------|\n`;
+			fullSection += `| Avg Maintainability Index | ${avgMI.toFixed(1)} |\n`;
+			fullSection += `| Min Maintainability Index | ${minMI.toFixed(1)} |\n`;
+			fullSection += `| Avg Cognitive Complexity | ${avgCognitive.toFixed(1)} |\n`;
+			fullSection += `| Max Cognitive Complexity | ${maxCognitive} |\n`;
+			fullSection += `| Avg Cyclomatic Complexity | ${avgCyclomatic.toFixed(1)} |\n`;
+			fullSection += `| Max Nesting Depth | ${maxNesting} |\n`;
+			fullSection += `| Total Files | ${results.length} |\n\n`;
+
+			if (lowMI.length > 0) {
+				fullSection += `### Low Maintainability (MI < 60)\n\n| File | MI | Cognitive | Cyclomatic | Nesting |\n|------|-----|-----------|------------|--------|\n`;
+				for (const f of lowMI) {
+					fullSection += `| ${f.filePath} | ${f.maintainabilityIndex.toFixed(1)} | ${f.cognitiveComplexity} | ${f.cyclomaticComplexity} | ${f.maxNestingDepth} |\n`;
+				}
+				fullSection += "\n";
+			}
+
+			if (highCognitive.length > 0) {
+				fullSection += `### High Cognitive Complexity (> 20)\n\n| File | Cognitive | MI | Cyclomatic | Nesting |\n|------|-----------|-----|------------|--------|\n`;
+				for (const f of highCognitive) {
+					fullSection += `| ${f.filePath} | ${f.cognitiveComplexity} | ${f.maintainabilityIndex.toFixed(1)} | ${f.cyclomaticComplexity} | ${f.maxNestingDepth} |\n`;
+				}
+				fullSection += "\n";
+			}
+
+			fullSection += `### All Files\n\n| File | MI | Cognitive | Cyclomatic | Nesting | Entropy |\n|------|-----|-----------|------------|---------|--------|\n`;
+			for (const f of results.sort(
+				(a, b) => a.maintainabilityIndex - b.maintainabilityIndex,
+			)) {
+				fullSection += `| ${f.filePath} | ${f.maintainabilityIndex.toFixed(1)} | ${f.cognitiveComplexity} | ${f.cyclomaticComplexity} | ${f.maxNestingDepth} | ${f.codeEntropy.toFixed(2)} |\n`;
+			}
+			fullSection += "\n";
+
+			if (aiSlopIssues.length > 0) {
+				fullSection += `### AI Slop Indicators\n\n`;
+				for (const issue of aiSlopIssues) {
+					fullSection += `${issue}\n`;
+				}
+				fullSection += "\n";
+			}
+
+			fullReport.push(fullSection);
+			return { findings, status: "done" };
 		}
 
-		if (aiSlopIssues.length > 0) {
-			_summary += `\n[AI Slop Indicators]\n${aiSlopIssues.join("\n")}`;
-		}
-		// Add complexity summary items
-		if (lowMI.length > 0) {
+		return { findings: 0, status: "done" };
+	});
+
+	// Runner 5: TODOs
+	await tracker.run("TODO scanner", async () => {
+		const todoResult = clients.todo.scanDirectory(targetPath);
+
+		if (todoResult.items.length > 0) {
 			summaryItems.push({
-				category: "Low MI",
-				count: lowMI.length,
-				severity: lowMI.some((f) => f.maintainabilityIndex < 20) ? "🔴" : "🟡",
+				category: "TODOs",
+				count: todoResult.items.length,
+				severity: "ℹ️",
 				fixable: false,
 			});
-		}
-		if (highCognitive.length > 0) {
-			summaryItems.push({
-				category: "High Complexity",
-				count: highCognitive.length,
-				severity: "🟡",
-				fixable: true,
-			});
-		}
-		if (aiSlopIssues.length > 0) {
-			summaryItems.push({
-				category: "AI Slop",
-				count: (aiSlopIssues.length / 2) | 0,
-				severity: "🟡",
-				fixable: true,
-			}); // Each issue is 2 lines
-		}
 
-		let fullSection = `## Complexity Metrics\n\n**${results.length} file(s) scanned**\n\n`;
-		fullSection += `### Summary\n\n| Metric | Value |\n|--------|-------|\n| Avg Maintainability Index | ${avgMI.toFixed(1)} |\n| Min Maintainability Index | ${minMI.toFixed(1)} |\n| Avg Cognitive Complexity | ${avgCognitive.toFixed(1)} |\n| Max Cognitive Complexity | ${maxCognitive} |\n| Avg Cyclomatic Complexity | ${avgCyclomatic.toFixed(1)} |\n| Max Nesting Depth | ${maxNesting} |\n| Total Files | ${results.length} |\n\n`;
-
-		if (lowMI.length > 0) {
-			fullSection += `### Low Maintainability (MI < 60)\n\n| File | MI | Cognitive | Cyclomatic | Nesting |\n|------|-----|-----------|------------|--------|\n`;
-			for (const f of lowMI) {
-				fullSection += `| ${f.filePath} | ${f.maintainabilityIndex.toFixed(1)} | ${f.cognitiveComplexity} | ${f.cyclomaticComplexity} | ${f.maxNestingDepth} |\n`;
-			}
-			fullSection += "\n";
-		}
-
-		if (highCognitive.length > 0) {
-			fullSection += `### High Cognitive Complexity (> 20)\n\n| File | Cognitive | MI | Cyclomatic | Nesting |\n|------|-----------|-----|------------|--------|\n`;
-			for (const f of highCognitive) {
-				fullSection += `| ${f.filePath} | ${f.cognitiveComplexity} | ${f.maintainabilityIndex.toFixed(1)} | ${f.cyclomaticComplexity} | ${f.maxNestingDepth} |\n`;
-			}
-			fullSection += "\n";
-		}
-
-		fullSection += `### All Files\n\n| File | MI | Cognitive | Cyclomatic | Nesting | Entropy |\n|------|-----|-----------|------------|---------|--------|\n`;
-		for (const f of results.sort(
-			(a, b) => a.maintainabilityIndex - b.maintainabilityIndex,
-		)) {
-			fullSection += `| ${f.filePath} | ${f.maintainabilityIndex.toFixed(1)} | ${f.cognitiveComplexity} | ${f.cyclomaticComplexity} | ${f.maxNestingDepth} | ${f.codeEntropy.toFixed(2)} |\n`;
-		}
-		fullSection += "\n";
-
-		if (aiSlopIssues.length > 0) {
-			fullSection += `### AI Slop Indicators\n\n`;
-			for (const issue of aiSlopIssues) {
-				fullSection += `${issue}\n`;
-			}
-			fullSection += "\n";
-		}
-		fullReport.push(fullSection);
-	}
-	const complexityCount = summaryItems.find(s => s.category === "Complexity")?.count ?? 0;
-	ctx.ui.notify(`✓ Part 3: Complexity metrics (${results.length} files, ${complexityCount} issues, ${getElapsed("part3")})`, "info");
-
-	// Part 4: TODOs
-	startTimer("part4");
-	ctx.ui.notify("🔍 Part 4: Scanning for TODOs...", "info");
-	const todoResult = clients.todo.scanDirectory(targetPath);
-	if (todoResult.items.length > 0) {
-		summaryItems.push({
-			category: "TODOs",
-			count: todoResult.items.length,
-			severity: "ℹ️",
-			fixable: false,
-		});
-		let fullSection = `## TODOs / Annotations\n\n`;
-		if (todoResult.items.length > 0) {
-			fullSection += `**${todoResult.items.length} annotation(s) found**\n\n| Type | File | Line | Text |\n|------|------|------|------|\n`;
+			let fullSection = `## TODOs / Annotations\n\n`;
+			fullSection += `**${todoResult.items.length} annotation(s) found**\n\n`;
+			fullSection +=
+				"| Type | File | Line | Text |\n|------|------|------|------|\n";
 			for (const item of todoResult.items) {
 				fullSection += `| ${item.type} | ${item.file} | ${item.line} | ${item.message} |\n`;
 			}
-		} else {
-			fullSection += `No annotations found.\n`;
+			fullSection += "\n";
+			fullReport.push(fullSection);
 		}
-		fullSection += "\n";
-		fullReport.push(fullSection);
-	}
-	const todoCount = summaryItems.find(s => s.category === "TODOs")?.count ?? 0;
-	ctx.ui.notify(`✓ Part 4: TODOs (${todoCount} items, ${getElapsed("part4")})`, "info");
 
-	// Part 5: Dead code
-	startTimer("part5");
-	ctx.ui.notify("🔍 Part 5: Checking for dead code...", "info");
-	if (clients.knip.isAvailable()) {
+		return { findings: todoResult.items.length, status: "done" };
+	});
+
+	// Runner 6: Dead code
+	await tracker.run("dead code (Knip)", async () => {
+		if (!clients.knip.isAvailable()) {
+			return { findings: 0, status: "skipped" };
+		}
+
 		const knipResult = clients.knip.analyze(targetPath);
+
 		if (knipResult.issues.length > 0) {
 			summaryItems.push({
 				category: "Dead Code",
@@ -486,27 +501,29 @@ export async function handleBooboo(
 				severity: "🟡",
 				fixable: true,
 			});
+
 			let fullSection = `## Dead Code (Knip)\n\n`;
-			if (knipResult.issues.length > 0) {
-				fullSection += `**${knipResult.issues.length} issue(s) found**\n\n| Type | Name | File |\n|------|------|------|\n`;
-				for (const issue of knipResult.issues) {
-					fullSection += `| ${issue.type} | ${issue.name} | ${issue.file ?? ""} |\n`;
-				}
-			} else {
-				fullSection += `No dead code issues found.\n`;
+			fullSection += `**${knipResult.issues.length} issue(s) found**\n\n`;
+			fullSection +=
+				"| Type | Name | File |\n|------|------|------|\n";
+			for (const issue of knipResult.issues) {
+				fullSection += `| ${issue.type} | ${issue.name} | ${issue.file ?? ""} |\n`;
 			}
 			fullSection += "\n";
 			fullReport.push(fullSection);
 		}
-	}
-	const deadCodeCount = summaryItems.find(s => s.category === "Dead Code")?.count ?? 0;
-	ctx.ui.notify(`✓ Part 5: Dead code (${deadCodeCount} issues, ${getElapsed("part5")})`, "info");
 
-	// Part 6: Duplicate code
-	startTimer("part6");
-	ctx.ui.notify("🔍 Part 6: Finding duplicate code...", "info");
-	if (clients.jscpd.isAvailable()) {
+		return { findings: knipResult.issues.length, status: "done" };
+	});
+
+	// Runner 7: Duplicate code
+	await tracker.run("duplicate code (jscpd)", async () => {
+		if (!clients.jscpd.isAvailable()) {
+			return { findings: 0, status: "skipped" };
+		}
+
 		const jscpdResult = clients.jscpd.scan(targetPath);
+
 		if (jscpdResult.clones.length > 0) {
 			summaryItems.push({
 				category: "Duplicates",
@@ -514,42 +531,44 @@ export async function handleBooboo(
 				severity: "🟡",
 				fixable: true,
 			});
+
 			let fullSection = `## Code Duplication (jscpd)\n\n`;
-			if (jscpdResult.clones.length > 0) {
-				fullSection += `**${jscpdResult.clones.length} duplicate block(s) found** (${jscpdResult.duplicatedLines}/${jscpdResult.totalLines} lines, ${jscpdResult.percentage.toFixed(1)}%)\n\n| File A | Line A | File B | Line B | Lines | Tokens |\n|--------|--------|--------|--------|-------|--------|\n`;
-				for (const dup of jscpdResult.clones) {
-					fullSection += `| ${dup.fileA} | ${dup.startA} | ${dup.fileB} | ${dup.startB} | ${dup.lines} | ${dup.tokens} |\n`;
-				}
-			} else {
-				fullSection += `No duplicate code found.\n`;
+			fullSection += `**${jscpdResult.clones.length} duplicate block(s) found** (${jscpdResult.duplicatedLines}/${jscpdResult.totalLines} lines, ${jscpdResult.percentage.toFixed(1)}%)\n\n`;
+			fullSection +=
+				"| File A | Line A | File B | Line B | Lines | Tokens |\n|--------|--------|--------|--------|-------|--------|\n";
+			for (const dup of jscpdResult.clones) {
+				fullSection += `| ${dup.fileA} | ${dup.startA} | ${dup.fileB} | ${dup.startB} | ${dup.lines} | ${dup.tokens} |\n`;
 			}
 			fullSection += "\n";
 			fullReport.push(fullSection);
 		}
-	}
-	const dupeCount = summaryItems.find(s => s.category === "Duplicates")?.count ?? 0;
-	ctx.ui.notify(`✓ Part 6: Duplicate code (${dupeCount} blocks, ${getElapsed("part6")})`, "info");
 
-	// Part 7: Type coverage
-	startTimer("part7");
-	ctx.ui.notify("🔍 Part 7: Checking type coverage...", "info");
-	if (clients.typeCoverage.isAvailable()) {
+		return { findings: jscpdResult.clones.length, status: "done" };
+	});
+
+	// Runner 8: Type coverage
+	await tracker.run("type coverage", async () => {
+		if (!clients.typeCoverage.isAvailable()) {
+			return { findings: 0, status: "skipped" };
+		}
+
 		const tcResult = clients.typeCoverage.scan(targetPath);
+
 		if (tcResult.percentage < 100) {
-			// Count files with <90% coverage instead of individual any types
 			const filesWithLowCoverage = new Set(
 				tcResult.untypedLocations
 					.filter(() => tcResult.percentage < 90)
-					.map(u => u.file)
+					.map((u) => u.file),
 			).size;
+
 			summaryItems.push({
 				category: "Type Coverage",
-				count: filesWithLowCoverage || 1, // At least 1 if any issues
+				count: filesWithLowCoverage || 1,
 				severity: tcResult.percentage < 90 ? "🟡" : "ℹ️",
 				fixable: false,
 			});
+
 			let fullSection = `## Type Coverage\n\n**${tcResult.percentage.toFixed(1)}% typed** (${tcResult.typed}/${tcResult.total} identifiers)\n\n`;
-			// Group by file and show top 10 files only
 			const byFile: Record<string, number> = {};
 			for (const u of tcResult.untypedLocations) {
 				byFile[u.file] = (byFile[u.file] || 0) + 1;
@@ -557,6 +576,7 @@ export async function handleBooboo(
 			const sortedFiles = Object.entries(byFile)
 				.sort((a, b) => b[1] - a[1])
 				.slice(0, 10);
+
 			if (sortedFiles.length > 0) {
 				fullSection += `### Top Files by Untyped Count\n\n| File | Untyped Count |\n|------|---------------|\n`;
 				for (const [file, count] of sortedFiles) {
@@ -568,16 +588,21 @@ export async function handleBooboo(
 			}
 			fullSection += "\n";
 			fullReport.push(fullSection);
-		}
-	}
-	const typeCoverageCount = summaryItems.find(s => s.category === "Type Coverage")?.count ?? 0;
-	ctx.ui.notify(`✓ Part 7: Type coverage (${typeCoverageCount} files low, ${getElapsed("part7")})`, "info");
 
-	// Part 8: Circular deps
-	startTimer("part8");
-	ctx.ui.notify("🔍 Part 8: Scanning for circular dependencies...", "info");
-	if (!pi.getFlag("no-madge") && clients.depChecker.isAvailable()) {
+			return { findings: filesWithLowCoverage || 1, status: "done" };
+		}
+
+		return { findings: 0, status: "done" };
+	});
+
+	// Runner 9: Circular deps
+	await tracker.run("circular deps (Madge)", async () => {
+		if (pi.getFlag("no-madge") || !clients.depChecker.isAvailable()) {
+			return { findings: 0, status: "skipped" };
+		}
+
 		const { circular } = clients.depChecker.scanProject(targetPath);
+
 		if (circular.length > 0) {
 			summaryItems.push({
 				category: "Circular Deps",
@@ -585,33 +610,36 @@ export async function handleBooboo(
 				severity: "🔴",
 				fixable: false,
 			});
-			let fullSection = `## Circular Dependencies (Madge)\n\n**${circular.length} circular chain(s) found**\n\n`;
+
+			let fullSection = `## Circular Dependencies (Madge)\n\n`;
+			fullSection += `**${circular.length} circular chain(s) found**\n\n`;
 			for (const dep of circular) {
 				fullSection += `- ${dep.path.join(" → ")}\n`;
 			}
 			fullReport.push(`${fullSection}\n`);
 		}
-	}
-	const circularCount = summaryItems.find(s => s.category === "Circular Deps")?.count ?? 0;
-	ctx.ui.notify(`✓ Part 8: Circular deps (${circularCount} chains, ${getElapsed("part8")})`, "info");
 
-	// Part 9: Arch rules
-	startTimer("part9");
-	ctx.ui.notify("🔍 Part 9: Checking architectural rules...", "info");
-	if (!clients.architect.hasConfig()) {
-		clients.architect.loadConfig(process.cwd());
-	}
-	if (clients.architect.hasConfig()) {
+		return { findings: circular.length, status: "done" };
+	});
+
+	// Runner 10: Arch rules
+	await tracker.run("architectural rules", async () => {
+		if (!clients.architect.hasConfig()) {
+			clients.architect.loadConfig(process.cwd());
+		}
+
+		if (!clients.architect.hasConfig()) {
+			return { findings: 0, status: "skipped" };
+		}
+
 		const archViolations: Array<{ file: string; message: string }> = [];
 		const archScanDir = (dir: string) => {
 			for (const entry of nodeFs.readdirSync(dir, { withFileTypes: true })) {
 				const full = path.join(dir, entry.name);
 				if (entry.isDirectory()) {
-					// Use centralized exclusions from file-utils
 					if (EXCLUDED_DIRS.includes(entry.name)) continue;
 					archScanDir(full);
 				} else if (/\.(ts|tsx|js|jsx|py|go|rs)$/.test(entry.name)) {
-					// Skip test files using centralized checker
 					if (isTestFile(full)) continue;
 					const relPath = path.relative(targetPath, full).replace(/\\/g, "/");
 					const content = nodeFs.readFileSync(full, "utf-8");
@@ -626,6 +654,7 @@ export async function handleBooboo(
 			}
 		};
 		archScanDir(targetPath);
+
 		if (archViolations.length > 0) {
 			summaryItems.push({
 				category: "Architectural",
@@ -633,17 +662,19 @@ export async function handleBooboo(
 				severity: "🔴",
 				fixable: false,
 			});
-			let fullSection = `## Architectural Rules\n\n**${archViolations.length} violation(s) found**\n\n`;
+
+			let fullSection = `## Architectural Rules\n\n`;
+			fullSection += `**${archViolations.length} violation(s) found**\n\n`;
 			for (const v of archViolations) {
 				fullSection += `- **${v.file}**: ${v.message}\n`;
 			}
 			fullReport.push(`${fullSection}\n`);
 		}
-	}
-	const archCount = summaryItems.find(s => s.category === "Architectural")?.count ?? 0;
-	ctx.ui.notify(`✓ Part 9: Arch rules (${archCount} violations, ${getElapsed("part9")})`, "info");
 
-	// --- Create structured JSON report (for AI processing) ---
+		return { findings: archViolations.length, status: "done" };
+	});
+
+	// --- Create structured JSON report ---
 	nodeFs.mkdirSync(reviewDir, { recursive: true });
 	const projectName = path.basename(process.cwd());
 
@@ -655,6 +686,14 @@ export async function handleBooboo(
 		.filter((s) => !s.fixable)
 		.reduce((sum, s) => sum + s.count, 0);
 
+	// Build runner summary
+	const runnerSummary = tracker.getRunners().map((r) => ({
+		name: r.name,
+		status: r.status,
+		findings: r.findings,
+		time: formatElapsed(r.elapsedMs),
+	}));
+
 	const jsonReport = {
 		meta: {
 			timestamp: new Date().toISOString(),
@@ -663,6 +702,17 @@ export async function handleBooboo(
 			totalIssues,
 			fixableCount,
 			refactorNeeded,
+			// New: runner execution details
+			runners: runnerSummary,
+			totalTime: formatElapsed(
+				runnerSummary.reduce((sum, r) => {
+					const ms =
+						r.time.endsWith("ms")
+							? parseInt(r.time)
+							: parseFloat(r.time) * 1000;
+					return sum + (isNaN(ms) ? 0 : ms);
+				}, 0),
+			),
 		},
 		byCategory: summaryItems.reduce(
 			(acc, item) => {
@@ -700,33 +750,50 @@ export async function handleBooboo(
 	const jsonPath = path.join(reviewDir, `booboo-${timestamp}.json`);
 	nodeFs.writeFileSync(jsonPath, JSON.stringify(jsonReport, null, 2), "utf-8");
 
-	// --- Create markdown report (for human reading) ---
+	// --- Create markdown report ---
 	const mdReport = `# Code Review: ${projectName}
 
 **Scanned:** ${jsonReport.meta.timestamp}
-
 **Path:** \`${targetPath}\`
-
 **Summary:** ${jsonReport.meta.totalIssues} issues | ${jsonReport.meta.fixableCount} fixable | ${jsonReport.meta.refactorNeeded} need refactor
+**Total Time:** ${jsonReport.meta.totalTime}
+
+## Runner Summary
+
+| Runner | Status | Findings | Time |
+|--------|--------|----------|------|
+${runnerSummary.map((r) => `| ${r.name} | ${r.status} | ${r.findings} | ${r.time} |`).join("\n")}
 
 ---
 
 ${fullReport.join("\n")}`;
+
 	const mdPath = path.join(reviewDir, `booboo-${timestamp}.md`);
 	nodeFs.writeFileSync(mdPath, mdReport, "utf-8");
 
-	// --- Brief terminal summary (triggers AI to read JSON) ---
+	// --- Brief terminal summary ---
 	if (summaryItems.length === 0) {
 		ctx.ui.notify("✓ Code review clean", "info");
 	} else {
 		const { totalIssues, fixableCount, refactorNeeded } = jsonReport.meta;
+
+		// Build runner lines for terminal output
+		const runnerLines = tracker
+			.getRunners()
+			.filter((r) => r.findings > 0)
+			.map(
+				(r) =>
+					`  ${r.status === "error" ? "✗" : "⚠"} ${r.name}: ${r.findings} finding${r.findings !== 1 ? "s" : ""} (${formatElapsed(r.elapsedMs)})`,
+			);
+
 		const summaryLines = [
 			`📊 Code Review: ${totalIssues} issues`,
+			...runnerLines,
 			`  🔧 ${fixableCount} fixable | 🏗️ ${refactorNeeded} refactor`,
+			`  ⏱️  Total: ${jsonReport.meta.totalTime}`,
 			`📄 JSON: ${jsonPath}`,
 			`📄 MD: ${mdPath}`,
 			`🚀 Run \`/lens-booboo-fix\` to auto-fix`,
-			`🚫 Mark false positive: \`/lens-booboo-fix --false-positive "<category>:<file>"\``,
 		];
 
 		ctx.ui.notify(summaryLines.join("\n"), "info");

@@ -11,8 +11,11 @@
  */
 
 import { spawnSync } from "node:child_process";
-import * as fs from "node:fs";
-import * as path from "node:path";
+import { safeSpawn } from "../../safe-spawn.js";
+import {
+	createConfigFinder,
+	isSgAvailable,
+} from "./utils/runner-helpers.js";
 import type {
 	Diagnostic,
 	DispatchContext,
@@ -20,44 +23,7 @@ import type {
 	RunnerResult,
 } from "../types.js";
 
-// Cache availability check
-let sgAvailable: boolean | null = null;
-
-function isSgAvailable(): boolean {
-	if (sgAvailable !== null) return sgAvailable;
-
-	const check = spawnSync("npx", ["sg", "--version"], {
-		encoding: "utf-8",
-		timeout: 5000,
-		shell: process.platform === "win32",
-	});
-
-	sgAvailable = !check.error && check.status === 0;
-	return sgAvailable;
-}
-
-function findSlopConfig(cwd: string): string | undefined {
-	// Check for local config first
-	const localPath = path.join(cwd, "rules", "python-slop-rules", ".sgconfig.yml");
-	if (fs.existsSync(localPath)) {
-		return localPath;
-	}
-
-	// Fall back to extension rules
-	const extensionPaths = [
-		"rules/python-slop-rules/.sgconfig.yml",
-		"../rules/python-slop-rules/.sgconfig.yml",
-	];
-
-	for (const candidate of extensionPaths) {
-		const fullPath = path.resolve(cwd, candidate);
-		if (fs.existsSync(fullPath)) {
-			return fullPath;
-		}
-	}
-
-	return undefined;
-}
+const findSlopConfig = createConfigFinder("python-slop-rules");
 
 const pythonSlopRunner: RunnerDefinition = {
 	id: "python-slop",
@@ -81,10 +47,8 @@ const pythonSlopRunner: RunnerDefinition = {
 		// Run ast-grep scan
 		const args = ["sg", "scan", "--config", configPath, "--json", ctx.filePath];
 
-		const result = spawnSync("npx", args, {
-			encoding: "utf-8",
+		const result = safeSpawn("npx", args, {
 			timeout: 30000,
-			shell: process.platform === "win32",
 		});
 
 		const raw = result.stdout + result.stderr;
@@ -112,60 +76,44 @@ function parseSlopOutput(raw: string, filePath: string): Diagnostic[] {
 	const diagnostics: Diagnostic[] = [];
 
 	try {
-		const parsed = JSON.parse(raw);
-		if (Array.isArray(parsed)) {
-			for (const item of parsed) {
-				const line = item.range?.start?.line || 1;
-				const ruleId = item.rule || "unknown";
-				const message = item.message || "";
+		// Try to parse as JSON first
+		const data = JSON.parse(raw);
+		const items = Array.isArray(data) ? data : [data];
 
-				// Categorize by severity based on weight from metadata
-				const weight = item.metadata?.weight || 3;
-				const severity = weight >= 4 ? "error" : "warning";
-				const category = item.metadata?.category || "slop";
+		for (const item of items) {
+			const rule = item.rule || "slop";
+			const message = item.message || "Pattern detected";
+			const severity = item.severity || "warning";
 
-				// Add slop category indicator to message
-				let enhancedMessage = `[${category}] ${message}`;
-				if (item.replacement) {
-					const preview =
-						item.replacement.length > 40
-							? `${item.replacement.substring(0, 40)}...`
-						: item.replacement;
-					enhancedMessage += `\n💡 Suggested fix: → "${preview}"`;
-				}
-
-				diagnostics.push({
-					id: `python-slop-${line}-${ruleId}`,
-					message: enhancedMessage,
-					filePath,
-					line,
-					column: item.range?.start?.column || 0,
-					severity,
-					semantic: severity === "error" ? "blocking" : "warning",
-					tool: "python-slop",
-					rule: ruleId,
-					fixable: !!item.replacement,
-					fixSuggestion: item.replacement,
-				});
-			}
+			diagnostics.push({
+				id: `python-slop-${rule}`,
+				message,
+				filePath,
+				line: item.start?.line || 0,
+				column: item.start?.column || 0,
+				severity: severity === "error" ? "error" : "warning",
+				semantic: severity === "error" ? "blocking" : "warning",
+				tool: "python-slop",
+				rule,
+			});
 		}
 	} catch {
-		// JSON parse failed, try line-by-line
-		const lines = raw.split("\n");
+		// Not JSON, try line-by-line parsing
+		const lines = raw.split("\n").filter((l) => l.trim());
 		for (const line of lines) {
-			if (line.includes(":") && line.includes("L")) {
-				const match = line.match(/L(\d+):?\s*(.+)/);
-				if (match) {
-					diagnostics.push({
-						id: `python-slop-${match[1]}-line`,
-						message: `[slop] ${match[2].trim()}`,
-						filePath,
-						line: parseInt(match[1], 10),
-						severity: "warning",
-						semantic: "warning",
-						tool: "python-slop",
-					});
-				}
+			// Try to extract line numbers from typical output formats
+			const match = line.match(/:(\d+):/);
+			if (match) {
+				diagnostics.push({
+					id: "python-slop-pattern",
+					message: line.trim(),
+					filePath,
+					line: parseInt(match[1], 10),
+					column: 0,
+					severity: "warning",
+					semantic: "warning",
+					tool: "python-slop",
+				});
 			}
 		}
 	}

@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import * as path from "node:path";
+import { safeSpawn } from "./safe-spawn.js";
 
 export interface Diagnostic {
 	line: number;
@@ -35,10 +36,8 @@ export abstract class SubprocessClient<T extends Diagnostic> {
 
 		const cmd = this.getCheckCommand();
 		try {
-			const result = spawnSync(cmd[0], cmd.slice(1), {
-				encoding: "utf-8",
+			const result = safeSpawn(cmd[0], cmd.slice(1), {
 				timeout: 10000,
-				shell: process.platform === "win32",
 			});
 
 			this.available = !result.error && result.status === 0;
@@ -73,19 +72,22 @@ export abstract class SubprocessClient<T extends Diagnostic> {
 		const { cwd, timeout = 15000, input } = options;
 
 		try {
-			const result = spawnSync(cmd[0], cmd.slice(1), {
-				encoding: "utf-8",
+			const result = safeSpawn(cmd[0], cmd.slice(1), {
 				timeout,
 				cwd,
-				shell: process.platform === "win32",
-				input,
 			});
 
 			if (result.error) {
 				this.log(`Command error: ${result.error.message}`);
 			}
 
-			return result;
+			// Return in a shape compatible with spawnSync return type
+			return {
+				status: result.status,
+				stdout: result.stdout,
+				stderr: result.stderr,
+				error: result.error,
+			} as unknown as ReturnType<typeof spawnSync>;
 		} catch (err: any) {
 			this.log(`Command failed: ${err.message}`);
 			return {

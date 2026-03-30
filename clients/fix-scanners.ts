@@ -17,6 +17,7 @@ import type { ComplexityClient } from "./complexity-client.js";
 import { EXCLUDED_DIRS } from "./file-utils.js";
 import type { JscpdClient } from "./jscpd-client.js";
 import type { KnipClient } from "./knip-client.js";
+import { safeSpawn } from "./safe-spawn.js";
 import { shouldIgnoreFile } from "./scan-utils.js";
 
 export interface DuplicateClone {
@@ -120,15 +121,13 @@ export function scanAstGrep(
 ): AstIssue[] {
 	const hasSg =
 		nodeFs.existsSync(path.join(targetPath, "node_modules", ".bin", "sg")) ||
-		childProcess.spawnSync("npx", ["sg", "--version"], {
-			encoding: "utf-8",
+		safeSpawn("npx", ["sg", "--version"], {
 			timeout: 5000,
-			shell: process.platform === "win32",
 		}).status === 0;
 
 	if (!hasSg) return [];
 
-	const result = childProcess.spawnSync(
+	const result = safeSpawn(
 		"npx",
 		[
 			"sg",
@@ -148,10 +147,7 @@ export function scanAstGrep(
 			targetPath,
 		],
 		{
-			encoding: "utf-8",
 			timeout: 30000,
-			shell: process.platform === "win32",
-			maxBuffer: 32 * 1024 * 1024,
 		},
 	);
 
@@ -204,7 +200,7 @@ export function scanBiomeIssues(
 ): BiomeIssue[] {
 	if (!biome.isAvailable()) return [];
 
-	const checkResult = childProcess.spawnSync(
+	const checkResult = safeSpawn(
 		"npx",
 		[
 			"@biomejs/biome",
@@ -213,7 +209,7 @@ export function scanBiomeIssues(
 			"--max-diagnostics=50",
 			targetPath,
 		],
-		{ encoding: "utf-8", timeout: 20000, shell: process.platform === "win32" },
+		{ timeout: 20000 },
 	);
 
 	const remainingBiome: BiomeIssue[] = [];

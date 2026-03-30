@@ -7,9 +7,8 @@
  * Requires: pyright (pip install pyright or npm install -g pyright)
  */
 
-import { spawnSync } from "node:child_process";
-import * as fs from "node:fs";
-import * as path from "node:path";
+import { safeSpawn } from "../../safe-spawn.js";
+import { createAvailabilityChecker } from "./utils/runner-helpers.js";
 import type {
 	Diagnostic,
 	DispatchContext,
@@ -17,48 +16,7 @@ import type {
 	RunnerResult,
 } from "../types.js";
 
-// Cache pyright availability check
-let pyrightAvailable: boolean | null = null;
-let pyrightCommand: string | null = null;
-
-/**
- * Find pyright command, checking venv first, then global.
- * Looks in .venv/bin, venv/bin (Unix), .venv/Scripts, venv/Scripts (Windows)
- */
-function findPyrightCommand(cwd: string): string {
-	// Check common venv locations
-	const venvPaths = [
-		".venv/bin/pyright",
-		"venv/bin/pyright",
-		".venv/Scripts/pyright.exe",
-		"venv/Scripts/pyright.exe",
-	];
-
-	for (const venvPath of venvPaths) {
-		const fullPath = path.join(cwd, venvPath);
-		if (fs.existsSync(fullPath)) {
-			return `"${fullPath}"`; // Quote for Windows paths with spaces
-		}
-	}
-
-	// Fall back to global
-	return "pyright";
-}
-
-function isPyrightAvailable(cwd?: string): boolean {
-	if (pyrightAvailable !== null) return pyrightAvailable;
-
-	const command = findPyrightCommand(cwd || process.cwd());
-
-	const check = spawnSync(command, ["--version"], {
-		encoding: "utf-8",
-		timeout: 5000,
-		shell: process.platform === "win32",
-	});
-	pyrightAvailable = !check.error && check.status === 0;
-	if (pyrightAvailable) pyrightCommand = command;
-	return pyrightAvailable;
-}
+const pyright = createAvailabilityChecker("pyright", ".exe");
 
 const pyrightRunner: RunnerDefinition = {
 	id: "pyright",
@@ -68,15 +26,13 @@ const pyrightRunner: RunnerDefinition = {
 
 	async run(ctx: DispatchContext): Promise<RunnerResult> {
 		// Skip if pyright is not installed
-		if (!isPyrightAvailable(ctx.cwd || process.cwd())) {
+		if (!pyright.isAvailable(ctx.cwd || process.cwd())) {
 			return { status: "skipped", diagnostics: [], semantic: "none" };
 		}
 
 		// Run pyright with JSON output (use venv-local or global command)
-		const result = spawnSync(pyrightCommand!, ["--outputjson", ctx.filePath], {
-			encoding: "utf-8",
+		const result = safeSpawn(pyright.getCommand()!, ["--outputjson", ctx.filePath], {
 			timeout: 60000,
-			shell: process.platform === "win32",
 		});
 
 		// Pyright returns non-zero when errors found, that's OK
@@ -102,53 +58,47 @@ const pyrightRunner: RunnerDefinition = {
 			return {
 				status: hasErrors ? "failed" : "succeeded",
 				diagnostics,
-				semantic: "warning",
+				semantic: hasErrors ? "blocking" : "warning",
 			};
 		} catch {
-			// JSON parse failed, skip
-			return { status: "skipped", diagnostics: [], semantic: "none" };
+			// JSON parse error
+			return {
+				status: "failed",
+				diagnostics: [],
+				semantic: "none",
+				rawOutput: output.slice(0, 500),
+			};
 		}
 	},
 };
 
-interface PyrightDiagnostic {
-	file: string;
-	severity: "error" | "warning" | "information";
-	message: string;
-	range: {
-		start: { line: number; character: number };
-		end: { line: number; character: number };
-	};
-	rule: string;
-}
-
-interface PyrightResult {
-	generalDiagnostics: PyrightDiagnostic[];
-}
-
 function parsePyrightOutput(
-	data: PyrightResult,
-	filePath: string,
+	data: any,
+	_filePath: string,
 ): Diagnostic[] {
-	if (!data.generalDiagnostics) return [];
+	const diagnostics: Diagnostic[] = [];
 
-	return data.generalDiagnostics
-		.filter((d) => {
-			// Only include errors and warnings, skip informational
-			return d.severity === "error" || d.severity === "warning";
-		})
-		.map((d) => ({
-			id: `pyright-${d.range.start.line}-${d.rule}`,
-			message: d.message.split("\n")[0], // First line only (pyright has multi-line messages)
-			filePath,
-			line: d.range.start.line + 1, // Pyright is 0-indexed, we're 1-indexed
-			column: d.range.start.character + 1,
-			severity: d.severity === "error" ? "error" : "warning",
-			semantic: d.severity === "error" ? "blocking" : "warning",
+	// Pyright JSON output has generalDiagnostics array
+	const generalDiags = data.generalDiagnostics || [];
+
+	for (const diag of generalDiags) {
+		// Skip if not for this file (pyright may output diagnostics for imports)
+		// For now, include all - caller will filter if needed
+
+		diagnostics.push({
+			id: `pyright-${diag.rule || diag.start?.line || "unknown"}`,
+			message: diag.message || "Type error",
+			filePath: diag.file || _filePath,
+			line: diag.start?.line || 0,
+			column: diag.start?.column || 0,
+			severity: diag.severity === "error" ? "error" : "warning",
+			semantic: diag.severity === "error" ? "blocking" : "warning",
 			tool: "pyright",
-			rule: d.rule,
-			fixable: false, // Pyright can't auto-fix, only suggest
-		}));
+			rule: diag.rule,
+		});
+	}
+
+	return diagnostics;
 }
 
 export default pyrightRunner;

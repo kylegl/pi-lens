@@ -5,6 +5,7 @@
  */
 
 import { spawnSync } from "node:child_process";
+import { safeSpawn } from "../../safe-spawn.js";
 import { stripAnsi } from "../../sanitize.js";
 import type {
 	Diagnostic,
@@ -21,10 +22,8 @@ const rustClippyRunner: RunnerDefinition = {
 
 	async run(ctx: DispatchContext): Promise<RunnerResult> {
 		// Check if cargo is available
-		const check = spawnSync("cargo", ["--version"], {
-			encoding: "utf-8",
+		const check = safeSpawn("cargo", ["--version"], {
 			timeout: 5000,
-			shell: process.platform === "win32",
 		});
 
 		if (check.error || check.status !== 0) {
@@ -38,13 +37,11 @@ const rustClippyRunner: RunnerDefinition = {
 		}
 
 		// Run cargo clippy on the package
-		const result = spawnSync(
+		const result = safeSpawn(
 			"cargo",
 			["clippy", "--message-format=json", "-q"],
 			{
-				encoding: "utf-8",
 				timeout: 60000,
-				shell: process.platform === "win32",
 				cwd: cargoToml.replace("Cargo.toml", ""),
 			},
 		);
@@ -80,8 +77,8 @@ function findCargoToml(filePath: string): string | undefined {
 	const { dirname, join } = require("node:path");
 	const { existsSync } = require("node:fs");
 
-	let dir = filePath;
-	for (let i = 0; i < 10; i++) {
+	let dir = dirname(filePath);
+	while (dir !== "/" && dir !== ".") {
 		const cargoPath = join(dir, "Cargo.toml");
 		if (existsSync(cargoPath)) {
 			return cargoPath;
@@ -90,39 +87,39 @@ function findCargoToml(filePath: string): string | undefined {
 		if (parent === dir) break;
 		dir = parent;
 	}
+
 	return undefined;
 }
 
-function parseClippyOutput(raw: string, targetFile: string): Diagnostic[] {
+function parseClippyOutput(raw: string, filePath: string): Diagnostic[] {
 	const diagnostics: Diagnostic[] = [];
-	const lines = raw.split("\n");
+	const lines = raw.split("\n").filter((l) => l.trim());
 
 	for (const line of lines) {
-		if (!line.trim()) continue;
-
 		try {
 			const msg = JSON.parse(line);
-			if (msg.message?.spans) {
-				for (const span of msg.message.spans) {
-					if (span.file_name?.includes(targetFile.replace(/\\/g, "/"))) {
-						const diagFilePath = targetFile;
-						diagnostics.push({
-							id: `clippy-${span.line_start || 0}-${msg.message.code?.code || "unknown"}`,
-							message: msg.message.message,
-							filePath: diagFilePath,
-							line: span.line_start,
-							column: span.column_start,
-							severity: msg.level === "error" ? "error" : "warning",
-							semantic: msg.level === "error" ? "blocking" : "warning",
-							tool: "clippy",
-							rule: msg.message.code?.code || "clippy",
-						});
-					}
-				}
-			}
-		} catch (err) {
-			// Not JSON, skip this entry
-			void err;
+			if (msg.reason !== "compiler-message") continue;
+
+			const message = msg.message;
+			if (!message) continue;
+
+			// Only include messages for this file or project-wide
+			const span = message.spans?.[0];
+			if (!span) continue;
+
+			diagnostics.push({
+				id: `clippy-${message.code?.code || "unknown"}`,
+				message: message.message || "Clippy warning",
+				filePath: span.file || filePath,
+				line: span.line_start || 0,
+				column: span.column_start || 0,
+				severity: message.level === "error" ? "error" : "warning",
+				semantic: message.level === "error" ? "blocking" : "warning",
+				tool: "rust-clippy",
+				rule: message.code?.code,
+			});
+		} catch {
+			// Not a JSON line, skip
 		}
 	}
 

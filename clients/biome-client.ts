@@ -12,6 +12,7 @@ import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { isFileKind } from "./file-kinds.js";
+import { safeSpawn } from "./safe-spawn.js";
 
 // --- Types ---
 
@@ -57,10 +58,8 @@ export class BiomeClient {
 		if (this.biomeAvailable !== null) return this.biomeAvailable;
 
 		// Try npx biome first (works without global install)
-		const result = spawnSync("npx", ["@biomejs/biome", "--version"], {
-			encoding: "utf-8",
+		const result = safeSpawn("npx", ["@biomejs/biome", "--version"], {
 			timeout: 10000,
-			shell: process.platform === "win32",
 		});
 
 		this.biomeAvailable = !result.error && result.status === 0;
@@ -105,7 +104,7 @@ export class BiomeClient {
 		if (!absolutePath) return [];
 
 		try {
-			const result = spawnSync(
+			const result = safeSpawn(
 				"npx",
 				[
 					"@biomejs/biome",
@@ -115,9 +114,7 @@ export class BiomeClient {
 					absolutePath,
 				],
 				{
-					encoding: "utf-8",
 					timeout: 15000,
-					shell: process.platform === "win32",
 				},
 			);
 
@@ -151,13 +148,11 @@ export class BiomeClient {
 		const content = fs.readFileSync(absolutePath, "utf-8");
 
 		try {
-			const result = spawnSync(
+			const result = safeSpawn(
 				"npx",
 				["@biomejs/biome", "format", "--write", absolutePath],
 				{
-					encoding: "utf-8",
 					timeout: 15000,
-					shell: process.platform === "win32",
 				},
 			);
 
@@ -205,7 +200,7 @@ export class BiomeClient {
 			const fixableCount = beforeDiags.filter((d) => d.fixable).length;
 
 			// Apply fixes
-			const result = spawnSync(
+			const result = safeSpawn(
 				"npx",
 				[
 					"@biomejs/biome",
@@ -215,9 +210,7 @@ export class BiomeClient {
 					absolutePath,
 				],
 				{
-					encoding: "utf-8",
 					timeout: 15000,
-					shell: process.platform === "win32",
 				},
 			);
 
@@ -291,13 +284,11 @@ export class BiomeClient {
 
 		try {
 			// Get formatted output without writing
-			const result = spawnSync(
+			const result = safeSpawn(
 				"npx",
 				["@biomejs/biome", "format", absolutePath],
 				{
-					encoding: "utf-8",
 					timeout: 15000,
-					shell: process.platform === "win32",
 				},
 			);
 

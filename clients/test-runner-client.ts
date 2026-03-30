@@ -13,6 +13,7 @@
 import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { safeSpawn } from "./safe-spawn.js";
 
 // --- Types ---
 
@@ -303,10 +304,8 @@ export class TestRunnerClient {
 		// Priority 5: Check if pytest is available globally (for Python)
 		try {
 			const whichCmd = process.platform === "win32" ? "where" : "which";
-			const result = spawnSync(whichCmd, ["pytest"], {
-				encoding: "utf-8",
+			const result = safeSpawn(whichCmd, ["pytest"], {
 				timeout: 2000,
-				shell: process.platform === "win32",
 			});
 			if (result.status === 0) {
 				this.log("Detected pytest globally");
@@ -413,11 +412,9 @@ export class TestRunnerClient {
 			const args = config.args(absoluteTestFile, cwd);
 			this.log(`Running: ${config.command} ${args.join(" ")}`);
 
-			const result = spawnSync(config.command, args, {
-				encoding: "utf-8",
+			const result = safeSpawn(config.command, args, {
 				cwd,
 				timeout: 60000, // 60s timeout
-				shell: process.platform === "win32",
 			});
 
 			const stdout = result.stdout || "";
