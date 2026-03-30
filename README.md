@@ -25,7 +25,8 @@ Every file write/edit triggers the **dispatcher-runner system** in delta mode:
 **Execution flow:**
 1. **Secrets scan** (pre-flight) — Hardcoded secrets block immediately
 2. **Dispatch system** — Routes file to appropriate runners by `FileKind`
-3. **Runners execute** by priority (5 → 50):
+3. **Structural patterns** (tree-sitter) — Fast AST-based checks (50ms)
+4. **Runners execute** by priority (5 → 50):
    - TypeScript type-checking (`ts-lsp`)
    - Python type-checking (`pyright`)
    - Linting (`biome`, `ruff`)
@@ -47,6 +48,46 @@ Every file write/edit triggers the **dispatcher-runner system** in delta mode:
 ```
 
 > **Note:** Only **blocking** issues (`ts-lsp`, `pyright` errors, `type-safety` switch errors, secrets) appear inline. Warnings are tracked but not shown inline (noise reduction) — run `/lens-booboo` to see all warnings.
+
+---
+
+### Structural Patterns (Tree-sitter)
+
+Before the dispatch runners execute, pi-lens performs **fast structural analysis** using tree-sitter (50-100ms):
+
+#### TypeScript/JavaScript Patterns
+
+| Pattern | Severity | What it finds |
+|---------|----------|---------------|
+| **Empty catch** | 🔴 Error | `catch (err) {}` — swallowing errors silently |
+| **Debugger** | 🟡 Warning | `debugger;` — debug leftover |
+| **Await in loop** | 🟡 Warning | `for (...) { await ... }` — sequential execution |
+| **Hardcoded secrets** | 🔴 Error | `const api_key = "..."` — security risk |
+| **DangerouslySetInnerHTML** | 🔴 Error | XSS risk in JSX |
+| **Nested ternary** | 🟡 Warning | `a ? b ? c : d : e` — unreadable code |
+| **Eval** | 🔴 Error | `eval(userInput)` — code injection |
+| **Deep promise chain** | 🟡 Warning | `.then().catch().then()` — 3+ levels |
+| **Console statement** | 🟡 Warning | `console.log` — debug leftover |
+| **Long parameter list** | 🟡 Warning | 6+ parameters — use object pattern |
+
+#### Python Patterns
+
+| Pattern | Severity | What it finds |
+|---------|----------|---------------|
+| **Bare except** | 🔴 Error | `except:` — catches SystemExit/KeyboardInterrupt |
+| **Mutable default arg** | 🔴 Error | `def f(x=[])` — shared mutable state |
+| **Wildcard import** | 🟡 Warning | `from module import *` — namespace pollution |
+| **Eval/exec** | 🔴 Error | `eval(user_input)` — code injection |
+| **Is vs equals** | 🟡 Warning | `is "literal"` should be `==` |
+| **Unreachable except** | 🔴 Error | Specific except after bare except (unreachable) |
+
+**Why tree-sitter is separate:**
+- **Speed:** 50ms vs 500ms for full type-checking
+- **Simplicity:** AST-only, no project-wide analysis
+- **Coverage:** Catches issues before expensive semantic analysis runs
+- **Multi-language:** Supports TypeScript, TSX, and Python
+
+**Status:** Shows inline in tool results (non-blocking warnings). Also included in `/lens-booboo` reports.
 
 ### At Session Start
 

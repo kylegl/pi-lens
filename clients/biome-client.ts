@@ -8,7 +8,6 @@
  * Docs: https://biomejs.dev/
  */
 
-import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { isFileKind } from "./file-kinds.js";
@@ -124,7 +123,9 @@ export class BiomeClient {
 
 			return this.parseDiagnostics(output, absolutePath);
 		} catch (err) {
-			this.log(`Check error: ${err instanceof Error ? err.message : String(err)}`);
+			this.log(
+				`Check error: ${err instanceof Error ? err.message : String(err)}`,
+			);
 			return [];
 		}
 	}
@@ -170,7 +171,11 @@ export class BiomeClient {
 
 			return { success: true, changed };
 		} catch (err) {
-			return { success: false, changed: false, error: err instanceof Error ? err.message : String(err) };
+			return {
+				success: false,
+				changed: false,
+				error: err instanceof Error ? err.message : String(err),
+			};
 		}
 	}
 
@@ -234,7 +239,92 @@ export class BiomeClient {
 
 			return { success: true, changed, fixed: fixableCount };
 		} catch (err) {
-			return { success: false, changed: false, fixed: 0, error: err instanceof Error ? err.message : String(err) };
+			return {
+				success: false,
+				changed: false,
+				fixed: 0,
+				error: err instanceof Error ? err.message : String(err),
+			};
+		}
+	}
+
+	/**
+	 * Fix multiple files at once (much faster than file-by-file)
+	 */
+	fixFiles(filePaths: string[]): {
+		success: boolean;
+		fixed: number;
+		changed: number;
+		error?: string;
+	} {
+		if (!this.isAvailable()) {
+			return {
+				success: false,
+				fixed: 0,
+				changed: 0,
+				error: "Biome not available",
+			};
+		}
+
+		// Filter to existing files
+		const validFiles = filePaths
+			.map(f => path.resolve(f))
+			.filter(f => fs.existsSync(f));
+
+		if (validFiles.length === 0) {
+			return { success: true, fixed: 0, changed: 0 };
+		}
+
+		try {
+			// Count fixable issues before fixing
+			let totalFixable = 0;
+			for (const file of validFiles) {
+				const diags = this.checkFile(file);
+				totalFixable += diags.filter(d => d.fixable).length;
+			}
+
+			// Run biome once on all files - much faster than npx per file
+			const result = safeSpawn(
+				"npx",
+				[
+					"@biomejs/biome",
+					"check",
+					"--write",
+					"--unsafe",
+					...validFiles,
+				],
+				{
+					timeout: 60000, // Longer timeout for batch
+				},
+			);
+
+			if (result.error) {
+				return {
+					success: false,
+					fixed: 0,
+					changed: 0,
+					error: result.error.message,
+				};
+			}
+
+			// Count how many files actually changed
+			let changedCount = 0;
+			for (const file of validFiles) {
+				// We don't know exactly which files changed without re-reading,
+				// so we report total files processed
+				changedCount++;
+			}
+
+			this.log(`Fixed ${totalFixable} issue(s) in ${validFiles.length} file(s)`);
+
+			return { success: true, fixed: totalFixable, changed: changedCount };
+		} catch (err) {
+			return {
+				success: false,
+				fixed: 0,
+				changed: 0,
+				error: err instanceof Error ? err.message : String(err),
+			};
 		}
 	}
 

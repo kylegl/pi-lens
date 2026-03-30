@@ -2,6 +2,31 @@
 
 All notable changes to pi-lens will be documented in this file.
 
+## [2.5.0] - 2026-03-30
+
+### Added
+- **Python tree-sitter support**: 6 structural patterns for Python code analysis
+  - `bare-except` — Detects `except:` that catches SystemExit/KeyboardInterrupt
+  - `mutable-default-arg` — Detects mutable defaults like `def f(x=[])`
+  - `wildcard-import` — Detects `from module import *`
+  - `eval-exec` — Detects `eval()` and `exec()` security risks
+  - `is-vs-equals` — Detects `is "literal"` that should use `==`
+  - `unreachable-except` — Detects unreachable exception handlers
+- **Multi-language tree-sitter architecture**: Query files in `rules/tree-sitter-queries/{language}/`
+  - TypeScript/TSX: 10 patterns
+  - Python: 6 patterns
+- **Tree-sitter query loader**: YAML-based query definitions with multi-line array support
+- **Query file extraction**: Moved TypeScript patterns from embedded code to `rules/tree-sitter-queries/typescript/*.yml`
+
+### Changed
+- **README updated**: Added Python patterns to structural analysis section
+- **Architect client**: Fixed TypeScript errors (`configPath` property declaration)
+
+### Technical Details
+- Downloaded `tree-sitter-python.wasm` (458KB) for Python AST parsing
+- Post-filters for semantic validation (e.g., distinguishing bare except from specific handlers)
+- ~50ms analysis time per file for Python
+
 ## [2.4.0] - 2026-03-30
 
 ### Added

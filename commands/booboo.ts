@@ -22,6 +22,9 @@ import { getSourceFiles } from "../clients/scan-utils.js";
 import { calculateSimilarity } from "../clients/state-matrix.js";
 import type { TodoScanner } from "../clients/todo-scanner.js";
 import type { TypeCoverageClient } from "../clients/type-coverage-client.js";
+import { detectProjectMetadata, formatProjectMetadata, getAvailableCommands } from "../clients/project-metadata.js";
+import { validateProductionReadiness, formatReadinessResult } from "../clients/production-readiness.js";
+import { TreeSitterClient } from "../clients/tree-sitter-client.js";
 
 const getExtensionDir = () => {
 	if (typeof __dirname !== "undefined") {
@@ -73,12 +76,20 @@ export async function handleBooboo(
 	pi: ExtensionAPI,
 ) {
 	const targetPath = args.trim() || ctx.cwd || process.cwd();
-	ctx.ui.notify("🔍 Running full codebase review...", "info");
+	
+	// Detect project metadata for richer reporting
+	const projectMeta = detectProjectMetadata(targetPath);
+	const metaDisplay = formatProjectMetadata(projectMeta);
+	
+	ctx.ui.notify(`🔍 Running full codebase review...\n${metaDisplay}`, "info");
 
 	// Detect project type once for all runners
 	const isTsProject = nodeFs.existsSync(
 		path.join(targetPath, "tsconfig.json"),
 	);
+	
+	// Get available commands for the project
+	const availableCommands = getAvailableCommands(projectMeta);
 
 	// Load false positives from fix session to filter them out
 	const sessionFile = path.join(process.cwd(), ".pi-lens", "fix-session.json");
@@ -500,6 +511,186 @@ export async function handleBooboo(
 		return { findings: 0, status: "done" };
 	});
 
+	// Runner 4: Tree-sitter patterns (complementary to ast-grep)
+	// - Falls back to tree-sitter if ast-grep unavailable
+	// - Detects patterns ast-grep can't easily do (multi-statement, complex nesting)
+	// - Captures values for richer reporting
+	await tracker.run("tree-sitter patterns", async () => {
+		const client = new TreeSitterClient();
+		if (!client.isAvailable()) {
+			return { findings: 0, status: "skipped" };
+		}
+
+		const languageId = isTsProject ? "typescript" : "javascript";
+		let findings = 0;
+		const structuralIssues: Array<{file: string; line: number; pattern: string; severity: string; fixable: boolean; note?: string}> = [];
+
+		// Only run basic patterns if ast-grep is NOT available (avoid duplication)
+		const astGrepAvailable = clients.astGrep.isAvailable();
+		
+		if (!astGrepAvailable) {
+			// Fallback: console.log detection (ast-grep normally handles this)
+			const consoleLogs = await client.structuralSearch(
+				"console.$METHOD($MSG)",
+				languageId,
+				targetPath,
+				{ maxResults: 30, fileFilter: shouldIncludeFile }
+			);
+
+			for (const match of consoleLogs) {
+				const method = match.captures.METHOD || "log";
+				if (["log", "debug", "info", "warn"].includes(method)) {
+					structuralIssues.push({
+						file: match.file,
+						line: match.line,
+						pattern: `console.${method}()`,
+						severity: "🟡",
+						fixable: true,
+						note: astGrepAvailable ? undefined : "(fallback - ast-grep not available)"
+					});
+					findings++;
+				}
+			}
+		}
+
+		// Pattern 1: Nested promise chains (ast-grep struggles with multi-statement nesting)
+		// This detects: .then().catch().then() chains that could be async/await
+		const promiseChains = await client.structuralSearch(
+			"$PROMISE.then($$$HANDLER1).catch($$$HANDLER2).then($$$HANDLER3)",
+			languageId,
+			targetPath,
+			{ maxResults: 20, fileFilter: shouldIncludeFile }
+		);
+
+		for (const match of promiseChains) {
+			structuralIssues.push({
+				file: match.file,
+				line: match.line,
+				pattern: "deep promise chain (3+ levels)",
+				severity: "🟡",
+				fixable: true,
+				note: "Consider converting to async/await for readability"
+			});
+			findings++;
+		}
+
+		// Pattern 2: Callback pyramids (error-first callbacks nested 3+ levels)
+		const callbackPyramids = await client.structuralSearch(
+			"$FUNC($$$ARGS, ($ERR, $$$PARAMS) => { $$$BODY })",
+			languageId,
+			targetPath,
+			{ maxResults: 20, fileFilter: shouldIncludeFile }
+		);
+
+		// Filter for actual callback nesting (error parameter pattern)
+		const nestedCallbacks = callbackPyramids.filter(m => {
+			const body = m.captures.BODY || "";
+			// Check if body contains another callback
+			return body.includes("(") && body.includes("=>");
+		});
+
+		for (const match of nestedCallbacks.slice(0, 10)) {
+			structuralIssues.push({
+				file: match.file,
+				line: match.line,
+				pattern: "callback pyramid (error-first pattern)",
+				severity: "🟡",
+				fixable: true,
+				note: "Consider promisify + async/await"
+			});
+			findings++;
+		}
+
+		// Pattern 3: Mixed async patterns (async function + .then() + callback)
+		// Detects inconsistent async styles in same function
+		const asyncFunctions = await client.structuralSearch(
+			"async function $NAME($$$PARAMS) { $BODY }",
+			languageId,
+			targetPath,
+			{ maxResults: 50, fileFilter: shouldIncludeFile }
+		);
+
+		for (const match of asyncFunctions) {
+			const body = match.captures.BODY || "";
+			// Check if async function uses both await and .then()
+			const hasAwait = body.includes("await");
+			const hasThen = body.match(/\.\s*then\s*\(/);
+			
+			if (hasAwait && hasThen) {
+				structuralIssues.push({
+					file: match.file,
+					line: match.line,
+					pattern: "mixed async/await + promise chains",
+					severity: "🟡",
+					fixable: true,
+					note: "Use consistent async style (prefer await)"
+				});
+				findings++;
+			}
+		}
+
+		// Pattern 4: Complex nested if/else (ast-grep can do this, but tree-sitter captures entire block)
+		const deepIfs = await client.structuralSearch(
+			"if ($COND1) { if ($COND2) { if ($COND3) { $$$BODY } } }",
+			languageId,
+			targetPath,
+			{ maxResults: 15, fileFilter: shouldIncludeFile }
+		);
+
+		for (const match of deepIfs) {
+			structuralIssues.push({
+				file: match.file,
+				line: match.line,
+				pattern: "deeply nested conditionals (3+ levels)",
+				severity: "🟡",
+				fixable: true,
+				note: "Consider early returns or guard clauses"
+			});
+			findings++;
+		}
+
+		// Add to summary if issues found
+		if (findings > 0) {
+			summaryItems.push({
+				category: astGrepAvailable ? "Advanced Structural" : "Structural Patterns (fallback)",
+				count: findings,
+				severity: "🟡",
+				fixable: true,
+			});
+
+			// Build detailed report
+			let fullSection = `## ${astGrepAvailable ? "Advanced Structural" : "Structural Patterns"} (Tree-sitter)\n\n`;
+			fullSection += `**${findings} issue(s) found**`;
+			if (!astGrepAvailable) {
+				fullSection += ` *(ast-grep not available - showing basic + advanced patterns)*`;
+			}
+			fullSection += `\n\n`;
+			
+			// Group by pattern type
+			const byPattern: Record<string, typeof structuralIssues> = {};
+			for (const issue of structuralIssues) {
+				if (!byPattern[issue.pattern]) byPattern[issue.pattern] = [];
+				byPattern[issue.pattern].push(issue);
+			}
+
+			for (const [pattern, issues] of Object.entries(byPattern)) {
+				fullSection += `### ${pattern} (${issues.length})\n\n`;
+				fullSection += "| File | Line | Note |\n|------|------|------|\n";
+				for (const issue of issues.slice(0, 10)) {
+					fullSection += `| ${issue.file} | ${issue.line} | ${issue.note || ""} |\n`;
+				}
+				if (issues.length > 10) {
+					fullSection += `| ... | ... | ... |\n`;
+				}
+				fullSection += "\n";
+			}
+
+			fullReport.push(fullSection);
+		}
+
+		return { findings, status: "done" };
+	});
+
 	// Runner 5: TODOs
 	await tracker.run("TODO scanner", async () => {
 		const todoResult = clients.todo.scanDirectory(targetPath);
@@ -761,6 +952,74 @@ export async function handleBooboo(
 		return { findings: archViolations.length, status: "done" };
 	});
 
+	// Runner 11: Production Readiness (inspired by pi-validate)
+	await tracker.run("production readiness", async () => {
+		const readiness = validateProductionReadiness(targetPath);
+		
+		// Add to summary if not perfect
+		if (readiness.overallScore < 100) {
+			const severity = readiness.grade === "A" ? "🟢" :
+			                 readiness.grade === "B" ? "🟢" :
+			                 readiness.grade === "C" ? "🟡" : "🟠";
+			
+			// Count issues across all categories
+			const totalIssues_ = Object.values(readiness.categories)
+				.reduce((sum, cat) => sum + cat.issues.length, 0);
+			
+			if (totalIssues_ > 0) {
+				summaryItems.push({
+					category: "Production Readiness",
+					count: totalIssues_,
+					severity: severity as "🔴" | "🟡" | "🟢" | "ℹ️",
+					fixable: true,
+				});
+			}
+		}
+
+		// Add to full report
+		let section = `## Production Readiness\n\n`;
+		section += `**Score:** ${readiness.overallScore}/100 **Grade:** ${readiness.grade}\n\n`;
+		
+		for (const [key, cat] of Object.entries(readiness.categories)) {
+			section += `### ${key.charAt(0).toUpperCase() + key.slice(1)} (${cat.score}/100)\n\n`;
+			if (cat.details.length > 0) {
+				for (const detail of cat.details) {
+					section += `- ${detail}\n`;
+				}
+			}
+			if (cat.issues.length > 0) {
+				for (const issue of cat.issues) {
+					section += `- ⚠️ ${issue}\n`;
+				}
+			}
+			if (cat.details.length === 0 && cat.issues.length === 0) {
+				section += `- ✅ No issues\n`;
+			}
+			section += "\n";
+		}
+		
+		fullReport.push(section);
+
+		// Add metadata to report
+		const criticalIssues = [];
+		for (const [key, cat] of Object.entries(readiness.categories)) {
+			for (const issue of cat.issues) {
+				// Flag critical issues
+				if (key === "code" && issue.includes("debugger")) {
+					criticalIssues.push(`[CRITICAL] ${issue}`);
+				} else if (key === "tests" && cat.score < 50) {
+					criticalIssues.push(`[CRITICAL] No tests found`);
+				}
+			}
+		}
+		
+		return { 
+			findings: Object.values(readiness.categories)
+				.reduce((sum, cat) => sum + cat.issues.length, 0), 
+			status: "done" 
+		};
+	});
+
 	// --- Create structured JSON report ---
 	nodeFs.mkdirSync(reviewDir, { recursive: true });
 	const projectName = path.basename(process.cwd());
@@ -801,6 +1060,25 @@ export async function handleBooboo(
 				}, 0),
 			),
 		},
+		// New: project metadata
+		project: {
+			type: projectMeta.type,
+			name: projectMeta.name,
+			version: projectMeta.version,
+			packageManager: projectMeta.packageManager,
+			languages: projectMeta.languages,
+			hasTests: projectMeta.hasTests,
+			testFramework: projectMeta.testFramework,
+			hasLinting: projectMeta.hasLinting,
+			linter: projectMeta.linter,
+			hasFormatting: projectMeta.hasFormatting,
+			formatter: projectMeta.formatter,
+			hasTypeScript: projectMeta.hasTypeScript,
+			configFiles: projectMeta.configFiles,
+			scripts: projectMeta.scripts,
+		},
+		// New: available commands for the project
+		commands: availableCommands,
 		byCategory: summaryItems.reduce(
 			(acc, item) => {
 				acc[item.category] = {
@@ -838,12 +1116,38 @@ export async function handleBooboo(
 	nodeFs.writeFileSync(jsonPath, JSON.stringify(jsonReport, null, 2), "utf-8");
 
 	// --- Create markdown report ---
+	
+	// Build project info section
+	let projectSection = `## Project Info\n\n**Type:** ${projectMeta.type}`;
+	if (projectMeta.name) projectSection += ` | **Name:** ${projectMeta.name}`;
+	if (projectMeta.version) projectSection += ` | **Version:** ${projectMeta.version}`;
+	if (projectMeta.packageManager) projectSection += `\n**Package Manager:** ${projectMeta.packageManager}`;
+	if (projectMeta.languages.length > 0) projectSection += `\n**Languages:** ${projectMeta.languages.join(", ")}`;
+	
+	// Tools
+	const tools: string[] = [];
+	if (projectMeta.testFramework) tools.push(`🧪 ${projectMeta.testFramework}`);
+	else if (projectMeta.hasTests) tools.push("🧪 tests");
+	if (projectMeta.linter) tools.push(`🔍 ${projectMeta.linter}`);
+	if (projectMeta.formatter) tools.push(`✨ ${projectMeta.formatter}`);
+	if (tools.length > 0) projectSection += `\n**Tools:** ${tools.join(" | ")}`;
+	
+	// Available commands
+	if (availableCommands.length > 0) {
+		projectSection += `\n\n### Available Commands\n\n| Action | Command |\n|--------|---------|`;
+		for (const cmd of availableCommands) {
+			projectSection += `\n| ${cmd.action} | \`${cmd.command}\` |`;
+		}
+	}
+	
 	const mdReport = `# Code Review: ${projectName}
 
 **Scanned:** ${jsonReport.meta.timestamp}
 **Path:** \`${targetPath}\`
 **Summary:** ${jsonReport.meta.totalIssues} issues | ${jsonReport.meta.fixableCount} fixable | ${jsonReport.meta.refactorNeeded} need refactor
 **Total Time:** ${jsonReport.meta.totalTime}
+
+${projectSection}
 
 ## Runner Summary
 

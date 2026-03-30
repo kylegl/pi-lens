@@ -25,7 +25,12 @@ export interface ArchitectViolation {
 
 export interface ArchitectRule {
 	pattern: string;
-	must_not?: Array<{ pattern: string; message: string; fix?: string; note?: string }>;
+	must_not?: Array<{
+		pattern: string;
+		message: string;
+		fix?: string;
+		note?: string;
+	}>;
 	must?: string[];
 	max_lines?: number;
 }
@@ -46,8 +51,8 @@ export interface FileArchitectResult {
 
 export class ArchitectClient {
 	private config: ArchitectConfig | null = null;
+	private configPath: string | null = null;
 	private isUserConfig: boolean = false;
-	private configPath?: string;
 	private log: (msg: string) => void;
 
 	constructor(verbose = false) {
@@ -89,13 +94,17 @@ export class ArchitectClient {
 				path.join(projectRoot, "..", "default-architect.yaml"),
 				path.join(process.cwd(), "default-architect.yaml"),
 			];
-			
+
 			// Handle both CommonJS and ESM environments
 			if (typeof __dirname !== "undefined") {
-				possibleDefaultPaths.push(path.join(__dirname, "..", "default-architect.yaml"));
-				possibleDefaultPaths.push(path.join(__dirname, "..", "..", "default-architect.yaml"));
+				possibleDefaultPaths.push(
+					path.join(__dirname, "..", "default-architect.yaml"),
+				);
+				possibleDefaultPaths.push(
+					path.join(__dirname, "..", "..", "default-architect.yaml"),
+				);
 			}
-			
+
 			for (const defaultPath of possibleDefaultPaths) {
 				try {
 					const content = fs.readFileSync(defaultPath, "utf-8");
@@ -110,7 +119,7 @@ export class ArchitectClient {
 					// Try next path
 				}
 			}
-			
+
 			this.log("No architect config available");
 			return false;
 		} catch {
@@ -246,7 +255,12 @@ export class ArchitectClient {
 			const lines = block.split("\n");
 			let rule: ArchitectRule | null = null;
 			let section: "must_not" | "must" | null = null;
-			let violation: { pattern: string; message: string; fix?: string; note?: string } | null = null;
+			let violation: {
+				pattern: string;
+				message: string;
+				fix?: string;
+				note?: string;
+			} | null = null;
 
 			for (const line of lines) {
 				const trimmed = line.trim();
@@ -293,7 +307,9 @@ export class ArchitectClient {
 				if (trimmed.startsWith("message:") && violation) {
 					// Match "..." or '...' allowing the other quote type inside
 					const dquoteMatch = trimmed.match(/message:\s*"([^"]*)"/);
-					const squoteMatch = !dquoteMatch ? trimmed.match(/message:\s*'([^']*)'/) : null;
+					const squoteMatch = !dquoteMatch
+						? trimmed.match(/message:\s*'([^']*)'/)
+						: null;
 					const match = dquoteMatch || squoteMatch;
 					if (match) {
 						violation.message = match[1];
@@ -309,7 +325,9 @@ export class ArchitectClient {
 				// Fix guidance for current violation
 				if (trimmed.startsWith("fix:") && violation) {
 					const dquoteMatch = trimmed.match(/fix:\s*"([^"]*)"/);
-					const squoteMatch = !dquoteMatch ? trimmed.match(/fix:\s*'([^']*)'/) : null;
+					const squoteMatch = !dquoteMatch
+						? trimmed.match(/fix:\s*'([^']*)'/)
+						: null;
 					const match = dquoteMatch || squoteMatch;
 					if (match) {
 						violation.fix = match[1];
@@ -320,7 +338,9 @@ export class ArchitectClient {
 				// Note guidance for current violation
 				if (trimmed.startsWith("note:") && violation) {
 					const dquoteMatch = trimmed.match(/note:\s*"([^"]*)"/);
-					const squoteMatch = !dquoteMatch ? trimmed.match(/note:\s*'([^']*)'/) : null;
+					const squoteMatch = !dquoteMatch
+						? trimmed.match(/note:\s*'([^']*)'/)
+						: null;
 					const match = dquoteMatch || squoteMatch;
 					if (match) {
 						violation.note = match[1];

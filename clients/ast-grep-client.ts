@@ -11,15 +11,14 @@
 import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import {
+import { AstGrepParser } from "./ast-grep-parser.js";
+import { AstGrepRuleManager } from "./ast-grep-rule-manager.js";
+import type {
 	AstGrepDiagnostic,
 	AstGrepMatch,
 	RuleDescription,
 	SgMatch,
 } from "./ast-grep-types.js";
-import { AstGrepParser } from "./ast-grep-parser.js";
-import { AstGrepRuleManager } from "./ast-grep-rule-manager.js";
-import { safeSpawn } from "./safe-spawn.js";
 import { SgRunner } from "./sg-runner.js";
 
 const _getExtensionDir = () => {
@@ -277,7 +276,9 @@ message: found
 			);
 			return parser.parseOutput(output, absolutePath);
 		} catch (err) {
-			this.log(`Scan error: ${err instanceof Error ? err.message : String(err)}`);
+			this.log(
+				`Scan error: ${err instanceof Error ? err.message : String(err)}`,
+			);
 			return [];
 		}
 	}

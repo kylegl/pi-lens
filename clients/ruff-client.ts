@@ -211,6 +211,72 @@ export class RuffClient {
 	}
 
 	/**
+	 * Fix multiple Python files at once (much faster than file-by-file)
+	 */
+	fixFiles(filePaths: string[]): {
+		success: boolean;
+		fixed: number;
+		changed: number;
+		error?: string;
+	} {
+		if (!this.isAvailable()) {
+			return {
+				success: false,
+				fixed: 0,
+				changed: 0,
+				error: "Ruff not available",
+			};
+		}
+
+		// Filter to existing Python files
+		const validFiles = filePaths
+			.map(f => path.resolve(f))
+			.filter(f => fs.existsSync(f) && f.endsWith(".py"));
+
+		if (validFiles.length === 0) {
+			return { success: true, fixed: 0, changed: 0 };
+		}
+
+		try {
+			// Count fixable issues before fixing
+			let totalFixable = 0;
+			for (const file of validFiles) {
+				const diags = this.checkFile(file);
+				totalFixable += diags.filter(d => d.fixable).length;
+			}
+
+			// Run ruff once on all files - much faster than per file
+			const result = safeSpawn(
+				"ruff",
+				["check", "--fix", ...validFiles],
+				{
+					timeout: 60000, // Longer timeout for batch
+				},
+			);
+
+			if (result.error) {
+				return {
+					success: false,
+					fixed: 0,
+					changed: 0,
+					error: result.error.message,
+				};
+			}
+
+			this.log(`Fixed ${totalFixable} issue(s) in ${validFiles.length} file(s)`);
+
+			return { success: true, fixed: totalFixable, changed: validFiles.length };
+		} catch (err: any) {
+			return {
+				success: false,
+				fixed: 0,
+				changed: 0,
+				error: err.message,
+			};
+		}
+	}
+
+	/**
 	 * Format a Python file (writes to disk)
 	 */
 	formatFile(filePath: string): {

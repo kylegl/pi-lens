@@ -36,6 +36,7 @@ import { TestRunnerClient } from "./clients/test-runner-client.js";
 import { TodoScanner } from "./clients/todo-scanner.js";
 import { TypeCoverageClient } from "./clients/type-coverage-client.js";
 import { TypeScriptClient } from "./clients/typescript-client.js";
+import { TreeSitterClient } from "./clients/tree-sitter-client.js";
 import { handleBooboo } from "./commands/booboo.js";
 import { handleFixFromBooboo } from "./commands/fix-from-booboo.js";
 import { handleFixSimplified } from "./commands/fix-simplified.js";
@@ -1171,6 +1172,97 @@ export default function (pi: ExtensionAPI) {
 						}
 					}
 				}
+			}
+		}
+
+		// --- Tree-sitter structural patterns (post-write check) ---
+		// Lightweight check for complex patterns ast-grep struggles with
+		if (fileContent && (filePath.endsWith(".ts") || filePath.endsWith(".tsx") || filePath.endsWith(".js"))) {
+			const treeSitterClient = new TreeSitterClient();
+			if (treeSitterClient.isAvailable()) {
+				await treeSitterClient.init();
+				const languageId = filePath.endsWith(".tsx") ? "tsx" : 
+				                   filePath.endsWith(".ts") ? "typescript" : "javascript";
+				
+				const structuralIssues: string[] = [];
+
+				// Quick check 1: Promise chain depth (more than 2 levels)
+				const promiseMatches = await treeSitterClient.structuralSearch(
+					"$PROMISE.then($$$H1).catch($$$H2).then($$$H3)",
+					languageId,
+					path.dirname(filePath),
+					{ maxResults: 5, fileFilter: (f) => f === filePath }
+				);
+				if (promiseMatches.length > 0) {
+					structuralIssues.push(`Deep promise chain (3+ levels) - consider async/await`);
+				}
+
+				// Quick check 2: Mixed async/await + .then()
+				const asyncMatches = await treeSitterClient.structuralSearch(
+					"async function $NAME($$$PARAMS) { $BODY }",
+					languageId,
+					path.dirname(filePath),
+					{ maxResults: 10, fileFilter: (f) => f === filePath }
+				);
+				for (const match of asyncMatches) {
+					const body = match.captures.BODY || "";
+					if (body.includes("await") && body.match(/\.\s*then\s*\(/)) {
+						structuralIssues.push(`Mixed async/await + promise chains - use consistent async style`);
+						break; // Only report once per file
+					}
+				}
+
+				// Quick check 3: Deep nesting (3+ levels)
+				const nestingMatches = await treeSitterClient.structuralSearch(
+					"if ($C1) { if ($C2) { if ($C3) { $$$BODY } } }",
+					languageId,
+					path.dirname(filePath),
+					{ maxResults: 3, fileFilter: (f) => f === filePath }
+				);
+				if (nestingMatches.length > 0) {
+					structuralIssues.push(`Deep nesting (3+ levels) - consider early returns`);
+				}
+
+				if (structuralIssues.length > 0) {
+					lspOutput += `\n\n🔍 Structural Patterns:\n${structuralIssues.map(i => `  ⚠️ ${i}`).join("\n")}`;
+				}
+			}
+		}
+
+		// --- TypeScript Language Service diagnostics (post-write) ---
+		// Fast semantic analysis for type errors, unused vars, etc.
+		if (filePath.endsWith(".ts") || filePath.endsWith(".tsx")) {
+			try {
+				const tsClient = new TypeScriptClient();
+				const projectRoot = findProjectRoot(filePath);
+				
+				// Track the file in the language service
+				tsClient.addFile(filePath, fileContent || "");
+				
+				// Get diagnostics (syntactic + semantic)
+				const diagnostics = tsClient.getDiagnostics(filePath);
+				
+				if (diagnostics.length > 0) {
+					// Filter to most important diagnostics
+					const importantDiags = diagnostics.filter(d => {
+						// Focus on errors and important warnings
+						// Skip noisy ones like "cannot find name" from missing imports
+						const code = (d as any).code;
+						if (code === 2304) return false; // "Cannot find name"
+						if (code === 2307) return false; // "Cannot find module"
+						return d.severity === "error" || (d.severity === "warning" && !code);
+					});
+					
+					if (importantDiags.length > 0) {
+						const tsOutput = importantDiags.slice(0, 5).map(d => {
+							const severity = d.severity === "error" ? "🔴" : "🟡";
+							return `  ${severity} [TS${(d as any).code}] ${d.message.split("\n")[0]}`;
+						}).join("\n");
+						lspOutput += `\n\n📐 TypeScript Diagnostics:\n${tsOutput}`;
+					}
+				}
+			} catch (err) {
+				dbg(`typescript-client error: ${err}`);
 			}
 		}
 

@@ -79,7 +79,7 @@ export class AstGrepRuleManager {
 		const gradeMatch = content.match(/Grade\s+(\d+\.\d+)/i);
 		if (gradeMatch) result.grade = parseFloat(gradeMatch[1]);
 
-		const fixMatch = content.match(/^fix:\s*\|?([\s\S]*?)(?=^\w|^rule:|\Z)/m);
+		const fixMatch = content.match(/^fix:\s*\|?([\s\S]*?)(?=^\w|^rule:|Z)/m);
 		if (fixMatch) {
 			result.fix = fixMatch[1]
 				.split("\n")
