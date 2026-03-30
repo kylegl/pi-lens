@@ -2,6 +2,78 @@
 
 All notable changes to pi-lens will be documented in this file.
 
+## [2.6.0] - 2026-03-30
+
+### Added - Phase 1: Event Bus Architecture
+- **Event Bus System** (`clients/bus/`): Decoupled pub/sub for diagnostic events
+  - `bus.ts` — Core publish/subscribe with `once()`, `waitFor()`, middleware support
+  - `events.ts` — 12 typed event definitions (DiagnosticFound, RunnerStarted, LspDiagnostic, etc.)
+  - `integration.ts` — Integration hooks for pi-lens index.ts with aggregator state
+- **Bus-integrated dispatcher** (`clients/dispatch/bus-dispatcher.ts`): Concurrent runner execution with event publishing
+- **New flags**: `--lens-bus`, `--lens-bus-debug` for event system control
+
+### Added - Phase 2: Effect-TS Service Layer
+- **Effect-TS infrastructure** (`clients/services/`): Composable async operations
+  - `runner-service.ts` — Concurrent runner execution with timeout handling
+  - `effect-integration.ts` — Bus-integrated Effect dispatch
+- **Structured concurrency**: `Effect.all()` with `{ concurrency: "unbounded" }`
+- **Graceful error recovery**: Individual runner failures don't stop other runners
+- **New flag**: `--lens-effect` for concurrent execution
+
+### Added - Phase 3: Multi-LSP Client (31 Language Servers)
+- **LSP Core** (`clients/lsp/`): Full Language Server Protocol support
+  - `client.ts` — JSON-RPC client with debounced diagnostics (150ms)
+  - `server.ts` — 31 LSP server definitions with root detection
+  - `language.ts` — File extension to LSP language ID mappings
+  - `launch.ts` — LSP process spawning utilities
+  - `index.ts` — Service layer with Effect integration
+  - `config.ts` — Custom LSP configuration support (`.pi-lens/lsp.json`)
+- **Built-in servers** (31 total):
+  - Core: TypeScript, Python, Go, Rust, Ruby, PHP, C#, F#, Java, Kotlin
+  - Native: C/C++, Zig, Swift, Dart, Haskell, OCaml, Lua
+  - Functional: Elixir, Gleam, Clojure
+  - DevOps: Terraform, Nix, Docker, Bash
+  - Config: YAML, JSON, Prisma
+  - Web (NEW): Vue, Svelte, ESLint, CSS/SCSS/Sass/Less
+- **Smart root detection**: `createRootDetector()` walks up tree looking for lockfiles/config
+- **Multi-server support**: Multiple LSP servers can handle same file type
+- **Debounced diagnostics**: 150ms debounce for cascading diagnostics (syntax → semantic)
+- **New flag**: `--lens-lsp` to enable LSP system
+- **Deprecated**: Old `ts-lsp` runner falls back to built-in TypeScriptClient when `--lens-lsp` not set
+
+### Added - Phase 4: Auto-Installation System
+- **Auto-installer** (`clients/installer/`): Automatic tool installation
+  - `index.ts` — Core installation logic for npm/pip packages
+  - `isToolInstalled()` — Check global PATH or local `.pi-lens/tools/`
+  - `installTool()` — Auto-install via npm or pip
+  - `ensureTool()` — Check first, install if missing
+- **Auto-installation for**: typescript-language-server, pyright, ruff, biome, ast-grep
+- **Local tools directory**: `.pi-lens/tools/node_modules/.bin/`
+- **PATH integration**: Local tools automatically added to PATH
+- **LSP integration**: TypeScript and Python servers now use `ensureTool()` before spawning
+
+### Changed - Commands
+- **Disabled**: `/lens-booboo-fix` — Now shows warning "currently disabled. Use /lens-booboo"
+- **Disabled**: `/lens-booboo-delta` — Now shows warning "currently disabled. Use /lens-booboo"
+- **Disabled**: `/lens-booboo-refactor` — Now shows warning "currently disabled. Use /lens-booboo"
+- **Active**: `/lens-booboo` — Full codebase review (only booboo command now)
+
+### Changed - Architecture
+- **Three-phase system**: Bus → Effect → LSP can be enabled independently
+- **Dispatcher priority**: `lens-effect` > `lens-bus` > default (sequential)
+- **LSP deprecation**: Old built-in TypeScriptClient deprecated, LSP client preferred
+
+### Documentation
+- **LSP configuration guide**: `docs/LSP_CONFIG.md` — How to add custom LSP servers
+- **README updated**: Added LSP section, three-phase architecture, 31 language matrix
+- **CHANGELOG restructured**: Now organized by Phase 1/2/3/4
+
+### Technical Details
+- **New dependencies**: `effect` (Phase 2), `vscode-jsonrpc` (Phase 3)
+- **Lines added**: ~6,000 across 4 phases
+- **Test status**: 617 passing (3 flaky unrelated tests)
+- **Backward compatibility**: All new features opt-in via flags
+
 ## [2.5.0] - 2026-03-30
 
 ### Added
