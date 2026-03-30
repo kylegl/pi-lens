@@ -119,6 +119,28 @@ Sequential automated fixing:
 4. AST-grep structural fixes
 5. AI-guided slop cleanup
 
+### Test Runner
+
+**Auto-detected test runners:**
+| Runner | Config Files | Languages |
+|--------|--------------|-----------|
+| **Vitest** | `vitest.config.ts`, `vitest.config.js` | TypeScript, JavaScript |
+| **Jest** | `jest.config.js`, `jest.config.ts`, `package.json` (jest field) | TypeScript, JavaScript |
+| **Pytest** | `pytest.ini`, `setup.cfg`, `pyproject.toml` | Python |
+
+**Behavior:**
+- **On file write:** Detects corresponding test file and runs it
+- **Pattern matching:** `file.ts` → `file.test.ts` or `__tests__/file.test.ts`
+- **Output:** Inline pass/fail with failure details
+- **Flag:** Use `--no-tests` to disable automatic test running
+
+**Example output:**
+```
+[tests] 3 passed, 1 failed (42ms)
+  ✓ should calculate total
+  ✗ should handle empty array (expected 0, got undefined)
+```
+
 ### Interactive Refactoring
 
 ```
