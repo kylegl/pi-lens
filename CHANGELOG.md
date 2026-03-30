@@ -2,6 +2,32 @@
 
 All notable changes to pi-lens will be documented in this file.
 
+## [2.3.0] - 2026-03-30
+
+### Added
+- **NAPI-based runner (`ast-grep-napi`)**: 100x faster TypeScript/JavaScript analysis (~9ms vs ~1200ms). Uses `@ast-grep/napi` for native-speed structural pattern matching. Priority 15, applies to TS/JS files only.
+- **Python slop detection (`python-slop`)**: New CLI runner with ~40 AI slop patterns from slop-code-bench research. Detects chained comparisons, manual min/max, redundant if/else, list comprehension opportunities, etc.
+- **TypeScript slop detection (`ts-slop-rules`)**: ~30 patterns for TS/JS slop detection including `for-index-length`, `empty-array-check`, `redundant-filter-map`, `double-negation`, `unnecessary-array-from`.
+- **`fix-simplified.ts` command**: New streamlined `/lens-booboo-fix` implementation with file-level exclusions (test files, excluded dirs) and anti-slop guidance. Uses `pi.sendUserMessage()` for actionable AI prompts.
+- **Comprehensive test coverage**: 25+ tests added across all runners (NAPI, Python slop, TS slop, YAML loading).
+- **Codebase self-scan**: `scan_codebase.test.ts` for testing the NAPI runner against the pi-lens codebase itself.
+
+### Changed
+- **Architecture documentation**: Updated README with complete architecture overview, runner system diagram, and language support matrix.
+- **Disabled problematic slop rules**: `ts-for-index-length` and `ts-unnecessary-array-isarray` disabled due to false positives on legitimate index-based operations.
+- **Runner registration**: Updated `clients/dispatch/runners/index.ts` with new runner priorities (ts-lsp/pyright at 5, ast-grep-napi at 15, python-slop at 25).
+- **TS slop runner disabled**: CLI runner `ts-slop.ts` disabled in favor of NAPI-based detection (faster, same rules).
+
+### Deprecated
+- **`/lens-rate` command**: Now shows deprecation warning. Needs re-structuring. Users should use `/lens-booboo` instead.
+- **`/lens-metrics` command**: Now shows deprecation warning. Temporarily disabled, will be restructured. Users should use `/lens-booboo` instead.
+
+### Removed
+- **Old implementations removed**: 259 lines of deprecated command code removed from `index.ts`.
+
+### Repository Cleanup
+- **Local-only files removed from GitHub**: `.pisessionsummaries/` and `refactor.md` removed from repo (still in local `.gitignore`).
+
 ## [2.1.1] - 2026-03-29
 
 ### Added
