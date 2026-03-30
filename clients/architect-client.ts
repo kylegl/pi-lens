@@ -19,11 +19,13 @@ export interface ArchitectViolation {
 	pattern: string;
 	message: string;
 	line?: number;
+	fix?: string;
+	note?: string;
 }
 
 export interface ArchitectRule {
 	pattern: string;
-	must_not?: Array<{ pattern: string; message: string }>;
+	must_not?: Array<{ pattern: string; message: string; fix?: string; note?: string }>;
 	must?: string[];
 	max_lines?: number;
 }
@@ -44,8 +46,8 @@ export interface FileArchitectResult {
 
 export class ArchitectClient {
 	private config: ArchitectConfig | null = null;
-	private configPath: string | null = null;
 	private isUserConfig: boolean = false;
+	private configPath?: string;
 	private log: (msg: string) => void;
 
 	constructor(verbose = false) {
@@ -81,20 +83,36 @@ export class ArchitectClient {
 
 		// Fall back to built-in default
 		try {
+			// Try multiple possible locations for the default config
+			const possibleDefaultPaths = [
+				path.join(projectRoot, "default-architect.yaml"),
+				path.join(projectRoot, "..", "default-architect.yaml"),
+				path.join(process.cwd(), "default-architect.yaml"),
+			];
+			
 			// Handle both CommonJS and ESM environments
-			let currentDir = ".";
 			if (typeof __dirname !== "undefined") {
-				currentDir = __dirname;
+				possibleDefaultPaths.push(path.join(__dirname, "..", "default-architect.yaml"));
+				possibleDefaultPaths.push(path.join(__dirname, "..", "..", "default-architect.yaml"));
 			}
-			const defaultPath = path.join(currentDir, "..", "default-architect.yaml");
-			const content = fs.readFileSync(defaultPath, "utf-8");
-			this.config = this.parseYaml(content);
-			this.configPath = defaultPath;
-			this.isUserConfig = false;
-			this.log(
-				"Using default architect rules (create .pi-lens/architect.yaml to customize)",
-			);
-			return true;
+			
+			for (const defaultPath of possibleDefaultPaths) {
+				try {
+					const content = fs.readFileSync(defaultPath, "utf-8");
+					this.config = this.parseYaml(content);
+					this.configPath = defaultPath;
+					this.isUserConfig = false;
+					this.log(
+						"Using default architect rules (create .pi-lens/architect.yaml to customize)",
+					);
+					return true;
+				} catch {
+					// Try next path
+				}
+			}
+			
+			this.log("No architect config available");
+			return false;
 		} catch {
 			this.log("No architect config available");
 			return false;
@@ -154,6 +172,8 @@ export class ArchitectClient {
 						pattern: rule.pattern,
 						message: check.message,
 						line: lineNum,
+						fix: check.fix,
+						note: check.note,
 					});
 
 					// Prevent infinite loop on empty matches
@@ -226,7 +246,7 @@ export class ArchitectClient {
 			const lines = block.split("\n");
 			let rule: ArchitectRule | null = null;
 			let section: "must_not" | "must" | null = null;
-			let violation: { pattern: string; message: string } | null = null;
+			let violation: { pattern: string; message: string; fix?: string; note?: string } | null = null;
 
 			for (const line of lines) {
 				const trimmed = line.trim();
@@ -269,9 +289,12 @@ export class ArchitectClient {
 					continue;
 				}
 
-				// Message for current violation
+				// Message for current violation (handle nested quotes)
 				if (trimmed.startsWith("message:") && violation) {
-					const match = trimmed.match(/message:\s*["'](.+?)["']/);
+					// Match "..." or '...' allowing the other quote type inside
+					const dquoteMatch = trimmed.match(/message:\s*"([^"]*)"/);
+					const squoteMatch = !dquoteMatch ? trimmed.match(/message:\s*'([^']*)'/) : null;
+					const match = dquoteMatch || squoteMatch;
 					if (match) {
 						violation.message = match[1];
 						if (rule) {
@@ -279,6 +302,28 @@ export class ArchitectClient {
 							rule.must_not.push(violation);
 						}
 						violation = null;
+					}
+					continue;
+				}
+
+				// Fix guidance for current violation
+				if (trimmed.startsWith("fix:") && violation) {
+					const dquoteMatch = trimmed.match(/fix:\s*"([^"]*)"/);
+					const squoteMatch = !dquoteMatch ? trimmed.match(/fix:\s*'([^']*)'/) : null;
+					const match = dquoteMatch || squoteMatch;
+					if (match) {
+						violation.fix = match[1];
+					}
+					continue;
+				}
+
+				// Note guidance for current violation
+				if (trimmed.startsWith("note:") && violation) {
+					const dquoteMatch = trimmed.match(/note:\s*"([^"]*)"/);
+					const squoteMatch = !dquoteMatch ? trimmed.match(/note:\s*'([^']*)'/) : null;
+					const match = dquoteMatch || squoteMatch;
+					if (match) {
+						violation.note = match[1];
 					}
 					continue;
 				}

@@ -38,7 +38,7 @@ export abstract class SubprocessClient<T extends Diagnostic> {
 			const result = spawnSync(cmd[0], cmd.slice(1), {
 				encoding: "utf-8",
 				timeout: 10000,
-				shell: true,
+				shell: process.platform === "win32",
 			});
 
 			this.available = !result.error && result.status === 0;
@@ -77,7 +77,7 @@ export abstract class SubprocessClient<T extends Diagnostic> {
 				encoding: "utf-8",
 				timeout,
 				cwd,
-				shell: true,
+				shell: process.platform === "win32",
 				input,
 			});
 

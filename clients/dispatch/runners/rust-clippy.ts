@@ -24,7 +24,7 @@ const rustClippyRunner: RunnerDefinition = {
 		const check = spawnSync("cargo", ["--version"], {
 			encoding: "utf-8",
 			timeout: 5000,
-			shell: true,
+			shell: process.platform === "win32",
 		});
 
 		if (check.error || check.status !== 0) {
@@ -44,7 +44,7 @@ const rustClippyRunner: RunnerDefinition = {
 			{
 				encoding: "utf-8",
 				timeout: 60000,
-				shell: true,
+				shell: process.platform === "win32",
 				cwd: cargoToml.replace("Cargo.toml", ""),
 			},
 		);
@@ -120,8 +120,9 @@ function parseClippyOutput(raw: string, targetFile: string): Diagnostic[] {
 					}
 				}
 			}
-		} catch {
-			// Not JSON, skip
+		} catch (err) {
+			// Not JSON, skip this entry
+			void err;
 		}
 	}
 

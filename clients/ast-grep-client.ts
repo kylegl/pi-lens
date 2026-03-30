@@ -28,6 +28,7 @@ export interface RuleDescription {
 	id: string;
 	message: string;
 	note?: string;
+	fix?: string;  // Suggested fix from rule
 	severity: "error" | "warning" | "info" | "hint";
 	grade?: number;
 }
@@ -40,6 +41,12 @@ export interface AstGrepMatch {
 	};
 	text: string;
 	replacement?: string;
+	labels?: Array<{
+		range: {
+			start: { line: number; column: number };
+			end: { line: number; column: number };
+		};
+	}>;
 }
 
 export interface AstGrepDiagnostic {
@@ -140,7 +147,7 @@ export class AstGrepClient {
 		ruleId: string,
 		ruleYaml: string,
 		timeout = 30000,
-	): any[] {
+	): AstGrepMatch[] {
 		if (!this.isAvailable()) return [];
 		return this.runner.tempScan(dir, ruleId, ruleYaml, timeout);
 	}
@@ -171,7 +178,7 @@ message: found
 		return this.groupSimilarFunctions(matches);
 	}
 
-	private groupSimilarFunctions(matches: any[]): Array<{
+	private groupSimilarFunctions(matches: AstGrepMatch[]): Array<{
 		pattern: string;
 		functions: Array<{ name: string; file: string; line: number }>;
 	}> {
@@ -289,7 +296,7 @@ message: found
 				{
 					encoding: "utf-8",
 					timeout: 15000,
-					shell: true,
+					shell: process.platform === "win32",
 				},
 			);
 
@@ -302,8 +309,8 @@ message: found
 				(sev) => this.mapSeverity(sev),
 			);
 			return parser.parseOutput(output, absolutePath);
-		} catch (err: any) {
-			this.log(`Scan error: ${err.message}`);
+		} catch (err) {
+			this.log(`Scan error: ${err instanceof Error ? err.message : String(err)}`);
 			return [];
 		}
 	}

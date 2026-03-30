@@ -37,7 +37,7 @@ import { TodoScanner } from "./clients/todo-scanner.js";
 import { TypeCoverageClient } from "./clients/type-coverage-client.js";
 import { TypeScriptClient } from "./clients/typescript-client.js";
 import { handleBooboo } from "./commands/booboo.js";
-import { handleFix } from "./commands/fix.js";
+import { handleFixSimplified } from "./commands/fix-simplified.js";
 import { handleRate } from "./commands/rate.js";
 import { handleRefactor, initRefactorLoop } from "./commands/refactor.js";
 
@@ -133,7 +133,7 @@ export default function (pi: ExtensionAPI) {
 	const agentBehaviorClient = new AgentBehaviorClient();
 	const cacheManager = new CacheManager();
 
-	// --- Initialize auto-loops (must be early for event handlers) ---
+	// --- Initialize auto-loops ---
 	initRefactorLoop(pi);
 
 	// --- Flags ---
@@ -327,9 +327,9 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerCommand("lens-booboo-fix", {
 		description:
-			"Iterative fix loop: auto-fixes Biome/Ruff, then generates a per-issue plan for agent to execute. Run repeatedly until clean. Usage: /lens-booboo-fix [path] [--reset]",
+			"One-shot code review: analyzes changed files for issues and suggests fixes. Usage: /lens-booboo-fix [path] [--apply] [--false-positive 'type:file:line']",
 		handler: (args, ctx) =>
-			handleFix(
+			handleFixSimplified(
 				args,
 				ctx,
 				{
@@ -342,7 +342,6 @@ export default function (pi: ExtensionAPI) {
 					complexity: complexityClient,
 				},
 				pi,
-				RULE_ACTIONS,
 			),
 	});
 
@@ -921,6 +920,9 @@ export default function (pi: ExtensionAPI) {
 		import("./clients/biome-client.js").BiomeDiagnostic[]
 	>();
 
+	// Track files already auto-fixed this turn to prevent fix loops
+	const fixedThisTurn = new Set<string>();
+
 	// Project rules scan result (from .claude/rules, .agents/rules, etc.)
 	let projectRulesScan: RuleScanResult = { rules: [], hasCustomRules: false };
 
@@ -1160,10 +1162,27 @@ export default function (pi: ExtensionAPI) {
 		if (/\.(ts|tsx|js|jsx)$/.test(filePath) && !pi.getFlag("no-lsp")) {
 			tsClient.updateFile(filePath, nodeFs.readFileSync(filePath, "utf-8"));
 			const diags = tsClient.getDiagnostics(filePath);
+			const fixes = tsClient.getAllCodeFixes(filePath);
 			if (diags.length > 0) {
-				hints.push(
-					`⚠ Pre-write: file already has ${diags.length} TypeScript error(s) — fix before adding more`,
-				);
+				const errorDiags = diags.filter((d) => d.severity === 1);
+				if (errorDiags.length > 0) {
+					hints.push(
+						`⚠ Pre-write: file has ${errorDiags.length} TypeScript error(s):`,
+					);
+					// Show first 3 errors with quick fixes
+					for (const d of errorDiags.slice(0, 3)) {
+						const lineFixes = fixes.get(d.range.start.line);
+						const fixHint = lineFixes?.[0]?.description
+							? ` 💡 ${lineFixes[0].description}`
+							: "";
+						hints.push(
+							`  L${d.range.start.line + 1}: ${d.message.split("\n")[0].substring(0, 80)}${fixHint}`,
+						);
+					}
+					if (errorDiags.length > 3) {
+						hints.push(`  ... and ${errorDiags.length - 3} more errors`);
+					}
+				}
 			}
 		}
 
@@ -1195,17 +1214,8 @@ export default function (pi: ExtensionAPI) {
 			);
 		}
 
-		// Architectural rules pre-write hints
-		if (architectClient.hasConfig()) {
-			const relPath = path.relative(projectRoot, filePath).replace(/\\/g, "/");
-			const archHints = architectClient.getHints(relPath);
-			if (archHints.length > 0) {
-				hints.push(`📐 Architectural rules for ${relPath}:`);
-				for (const h of archHints) {
-					hints.push(`  → ${h}`);
-				}
-			}
-		}
+		// Architectural rules: Skip pre-write hints (too noisy)
+		// Post-write violations will be shown via architect runner in dispatch
 
 		dbg(`  pre-write hints: ${hints.length} — ${hints.join(" | ") || "none"}`);
 		if (hints.length > 0) {
@@ -1318,12 +1328,53 @@ export default function (pi: ExtensionAPI) {
 
 		let lspOutput = preHint ? `\n\n${preHint}` : "";
 
+		// --- Auto-fix on write (safely - track to prevent loops) ---
+		// Apply fixes BEFORE dispatch so dispatch only reports remaining issues
+		const autofixBiome = pi.getFlag("autofix-biome");
+		const autofixRuff = pi.getFlag("autofix-ruff");
+		let fixedCount = 0;
+
+		if (!fixedThisTurn.has(filePath)) {
+			// Python: Ruff auto-fix
+			if (
+				autofixRuff &&
+				ruffClient.isAvailable() &&
+				ruffClient.isPythonFile(filePath)
+			) {
+				const result = ruffClient.fixFile(filePath);
+				if (result.success && result.fixed > 0) {
+					fixedCount += result.fixed;
+					fixedThisTurn.add(filePath);
+					dbg(`autofix: ruff fixed ${result.fixed} issue(s) in ${filePath}`);
+				}
+			}
+
+			// JS/TS/JSON: Biome auto-fix
+			if (
+				autofixBiome &&
+				biomeClient.isAvailable() &&
+				biomeClient.isSupportedFile(filePath)
+			) {
+				const result = biomeClient.fixFile(filePath);
+				if (result.success && result.fixed > 0) {
+					fixedCount += result.fixed;
+					fixedThisTurn.add(filePath);
+					dbg(`autofix: biome fixed ${result.fixed} issue(s) in ${filePath}`);
+				}
+			}
+		}
+
 		// --- Declarative dispatch: run all applicable lint tools ---
 		// Phase 2: Replaced ~400 lines of if/else with unified dispatch system
 		dbg(`dispatch: running lint tools for ${filePath}`);
 		const dispatchOutput = await dispatchLint(filePath, projectRoot, pi);
 		if (dispatchOutput) {
 			lspOutput += `\n\n${dispatchOutput}`;
+		}
+
+		// Report autofix results
+		if (fixedCount > 0) {
+			lspOutput += `\n\n✅ Auto-fixed ${fixedCount} issue(s) in ${path.basename(filePath)}`;
 		}
 
 		// Agent behavior warnings (blind writes, thrashing)
@@ -1456,5 +1507,8 @@ export default function (pi: ExtensionAPI) {
 				cwd,
 			);
 		}
+
+		// Clear fixed tracking so files can be fixed again on next turn
+		fixedThisTurn.clear();
 	});
 }

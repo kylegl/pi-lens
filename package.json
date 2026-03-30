@@ -48,6 +48,7 @@
 		"@sinclair/typebox": "^0.34.0"
 	},
 	"devDependencies": {
+		"@ast-grep/napi": "^0.42.0",
 		"@types/node": "^22.10.5",
 		"typescript": "^5.0.0",
 		"vitest": "^4.1.1"

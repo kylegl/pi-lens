@@ -88,7 +88,7 @@ export class RustClient {
 					const result = spawnSync(p, ["--version"], {
 						encoding: "utf-8",
 						timeout: 3000,
-						shell: true,
+						shell: process.platform === "win32",
 					});
 					if (!result.error && result.status === 0) {
 						this.cargoPath = p;
@@ -141,7 +141,7 @@ export class RustClient {
 					encoding: "utf-8",
 					timeout: 60000,
 					cwd,
-					shell: true,
+					shell: process.platform === "win32",
 				},
 			);
 
@@ -167,7 +167,7 @@ export class RustClient {
 					encoding: "utf-8",
 					timeout: 60000,
 					cwd,
-					shell: true,
+					shell: process.platform === "win32",
 				},
 			);
 

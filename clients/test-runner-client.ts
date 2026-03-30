@@ -306,7 +306,7 @@ export class TestRunnerClient {
 			const result = spawnSync(whichCmd, ["pytest"], {
 				encoding: "utf-8",
 				timeout: 2000,
-				shell: true,
+				shell: process.platform === "win32",
 			});
 			if (result.status === 0) {
 				this.log("Detected pytest globally");
@@ -417,7 +417,7 @@ export class TestRunnerClient {
 				encoding: "utf-8",
 				cwd,
 				timeout: 60000, // 60s timeout
-				shell: true,
+				shell: process.platform === "win32",
 			});
 
 			const stdout = result.stdout || "";

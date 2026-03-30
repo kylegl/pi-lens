@@ -41,7 +41,7 @@ export class SgRunner {
 		const result = spawnSync("npx", ["sg", "--version"], {
 			encoding: "utf-8",
 			timeout: 10000,
-			shell: true,
+			shell: process.platform === "win32",
 		});
 		return !result.error && result.status === 0;
 	}
@@ -53,7 +53,7 @@ export class SgRunner {
 		return new Promise((resolve) => {
 			const proc = spawn("npx", ["sg", ...args], {
 				stdio: ["ignore", "pipe", "pipe"],
-				shell: true,
+				shell: process.platform === "win32",
 			});
 			let stdout = "";
 			let stderr = "";
@@ -104,7 +104,7 @@ export class SgRunner {
 		const result = spawnSync("npx", ["sg", ...args], {
 			encoding: "utf-8",
 			timeout: 30000,
-			shell: true,
+			shell: process.platform === "win32",
 			maxBuffer: 32 * 1024 * 1024,
 		});
 
@@ -140,7 +140,7 @@ export class SgRunner {
 			const result = spawnSync(
 				"npx",
 				["sg", "scan", "--config", configFile, "--json", dir],
-				{ encoding: "utf-8", timeout, shell: true },
+				{ encoding: "utf-8", timeout, shell: process.platform === "win32" },
 			);
 
 			const output = result.stdout || result.stderr || "";

@@ -120,7 +120,7 @@ export function scanForSecrets(
 
 	for (let i = 0; i < lines.length; i++) {
 		const line = lines[i];
-		let matched = false;
+		let _matched = false;
 		for (const pattern of SECRET_PATTERNS) {
 			// Reset lastIndex before each test (important for global regex)
 			const regex = new RegExp(pattern.pattern.source, pattern.pattern.flags);
@@ -129,7 +129,7 @@ export function scanForSecrets(
 					line: i + 1,
 					message: pattern.message,
 				});
-				matched = true;
+				_matched = true;
 				break; // One finding per line
 			}
 		}

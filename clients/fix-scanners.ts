@@ -14,6 +14,7 @@ import * as nodeFs from "node:fs";
 import * as path from "node:path";
 import type { BiomeClient } from "./biome-client.js";
 import type { ComplexityClient } from "./complexity-client.js";
+import { EXCLUDED_DIRS } from "./file-utils.js";
 import type { JscpdClient } from "./jscpd-client.js";
 import type { KnipClient } from "./knip-client.js";
 import { shouldIgnoreFile } from "./scan-utils.js";
@@ -68,8 +69,9 @@ function dbg(msg: string) {
 	const line = `[${new Date().toISOString()}] ${msg}\n`;
 	try {
 		nodeFs.appendFileSync(DEBUG_LOG, line);
-	} catch {
-		// Ignored
+	} catch (err) {
+		// Debug logging failed, silently ignore to avoid recursive errors
+		void err;
 	}
 }
 
@@ -121,7 +123,7 @@ export function scanAstGrep(
 		childProcess.spawnSync("npx", ["sg", "--version"], {
 			encoding: "utf-8",
 			timeout: 5000,
-			shell: true,
+			shell: process.platform === "win32",
 		}).status === 0;
 
 	if (!hasSg) return [];
@@ -148,7 +150,7 @@ export function scanAstGrep(
 		{
 			encoding: "utf-8",
 			timeout: 30000,
-			shell: true,
+			shell: process.platform === "win32",
 			maxBuffer: 32 * 1024 * 1024,
 		},
 	);
@@ -211,7 +213,7 @@ export function scanBiomeIssues(
 			"--max-diagnostics=50",
 			targetPath,
 		],
-		{ encoding: "utf-8", timeout: 20000, shell: true },
+		{ encoding: "utf-8", timeout: 20000, shell: process.platform === "win32" },
 	);
 
 	const remainingBiome: BiomeIssue[] = [];
@@ -251,17 +253,7 @@ export function scanSlop(
 		for (const entry of nodeFs.readdirSync(dir, { withFileTypes: true })) {
 			const fullPath = path.join(dir, entry.name);
 			if (entry.isDirectory()) {
-				if (
-					[
-						"node_modules",
-						".git",
-						"dist",
-						"build",
-						".next",
-						".pi-lens",
-					].includes(entry.name)
-				)
-					continue;
+				if (EXCLUDED_DIRS.includes(entry.name)) continue;
 				scanDir(fullPath);
 			} else if (complexity.isSupportedFile(fullPath)) {
 				const metrics = complexity.analyzeFile(fullPath);

@@ -119,7 +119,7 @@ export function isToolAvailable(toolName: string): boolean {
 		const result = spawnSync(toolName, ["--version"], {
 			encoding: "utf-8",
 			timeout: 5000,
-			shell: true,
+			shell: process.platform === "win32",
 		});
 		const available = !result.error && result.status === 0;
 		TOOL_CACHE.set(toolName, {
@@ -137,7 +137,7 @@ export function isToolAvailable(toolName: string): boolean {
 		const result = spawnSync(tool.command, tool.versionCommand, {
 			encoding: "utf-8",
 			timeout: 10000,
-			shell: true,
+			shell: process.platform === "win32",
 		});
 		const available = !result.error && result.status === 0;
 		const output = result.stdout + result.stderr;
@@ -172,7 +172,7 @@ export function getToolVersion(toolName: string): string | undefined {
 		const result = spawnSync(tool.command, tool.versionCommand, {
 			encoding: "utf-8",
 			timeout: 10000,
-			shell: true,
+			shell: process.platform === "win32",
 		});
 		if (!result.error && result.status === 0) {
 			const output = result.stdout + result.stderr;

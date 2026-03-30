@@ -47,7 +47,7 @@ export class JscpdClient {
 		const result = spawnSync("npx", ["jscpd", "--version"], {
 			encoding: "utf-8",
 			timeout: 5000,
-			shell: true,
+			shell: process.platform === "win32",
 		});
 		this.available = !result.error && result.status === 0;
 		return this.available;
@@ -116,7 +116,7 @@ export class JscpdClient {
 					encoding: "utf-8",
 					timeout: 30000,
 					cwd,
-					shell: true,
+					shell: process.platform === "win32",
 				},
 			);
 

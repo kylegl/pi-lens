@@ -59,7 +59,7 @@ export class RuffClient {
 			const result = spawnSync("ruff", ["--version"], {
 				encoding: "utf-8",
 				timeout: 5000,
-				shell: true,
+				shell: process.platform === "win32",
 			});
 			this.ruffAvailable = !result.error && result.status === 0;
 			if (this.ruffAvailable) {
@@ -103,7 +103,7 @@ export class RuffClient {
 				{
 					encoding: "utf-8",
 					timeout: 10000,
-					shell: true,
+					shell: process.platform === "win32",
 				},
 			);
 
@@ -134,7 +134,7 @@ export class RuffClient {
 				{
 					encoding: "utf-8",
 					timeout: 10000,
-					shell: true,
+					shell: process.platform === "win32",
 				},
 			);
 
@@ -190,7 +190,7 @@ export class RuffClient {
 			const result = spawnSync("ruff", ["check", "--fix", absolutePath], {
 				encoding: "utf-8",
 				timeout: 15000,
-				shell: true,
+				shell: process.platform === "win32",
 			});
 
 			if (result.error) {
@@ -238,7 +238,7 @@ export class RuffClient {
 			const result = spawnSync("ruff", ["format", absolutePath], {
 				encoding: "utf-8",
 				timeout: 10000,
-				shell: true,
+				shell: process.platform === "win32",
 			});
 
 			if (result.error) {

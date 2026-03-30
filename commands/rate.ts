@@ -150,8 +150,9 @@ export async function gatherScores(
 					}
 				}
 			}
-		} catch {
+		} catch (err) {
 			// Skip unreadable files
+			void err;
 		}
 	}
 	securityScore = Math.max(0, 100 - secretsFound * 15);
@@ -249,7 +250,7 @@ export async function gatherScores(
 			{
 				encoding: "utf-8",
 				timeout: 60000,
-				shell: true,
+				shell: process.platform === "win32",
 				cwd: targetPath,
 			},
 		);

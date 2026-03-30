@@ -50,7 +50,7 @@ export function scanSkipViolations(
 		{
 			encoding: "utf-8",
 			timeout: 30000,
-			shell: true,
+			shell: process.platform === "win32",
 			maxBuffer: 32 * 1024 * 1024,
 		},
 	);

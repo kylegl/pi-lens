@@ -25,7 +25,7 @@ export function isCommandAvailable(command: string): boolean {
 		const result = spawnSync(command, ["--version"], {
 			encoding: "utf-8",
 			timeout: 5000,
-			shell: true,
+			shell: process.platform === "win32",
 		});
 		return result.status === 0;
 	} catch {

@@ -385,7 +385,7 @@ export function computeTDI(history: MetricsHistory): ProjectTDI {
 
 	let totalMI = 0;
 	let totalCognitive = 0;
-	let totalNesting = 0;
+	let _totalNesting = 0;
 	let filesWithDebt = 0;
 	let debtFromMI = 0;
 	let debtFromCognitive = 0;
@@ -395,7 +395,7 @@ export function computeTDI(history: MetricsHistory): ProjectTDI {
 		const snap = file.latest;
 		totalMI += snap.mi;
 		totalCognitive += snap.cognitive;
-		totalNesting += snap.nesting;
+		_totalNesting += snap.nesting;
 
 		// Accumulate debt points
 		let fileDebt = 0;

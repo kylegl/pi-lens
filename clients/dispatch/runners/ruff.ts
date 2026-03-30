@@ -48,7 +48,7 @@ function isRuffAvailable(cwd?: string): boolean {
 	const check = spawnSync(command, ["--version"], {
 		encoding: "utf-8",
 		timeout: 5000,
-		shell: true,
+		shell: process.platform === "win32",
 	});
 
 	ruffAvailable = !check.error && check.status === 0;
@@ -68,15 +68,16 @@ const ruffRunner: RunnerDefinition = {
 			return { status: "skipped", diagnostics: [], semantic: "none" };
 		}
 
-		// Run ruff check
-		const args = ctx.autofix
-			? ["check", "--fix", ctx.filePath]
-			: ["check", ctx.filePath];
+		// IMPORTANT: Never use --fix in dispatch runner to prevent infinite loops.
+		// Writing to the file would trigger another tool_result event, which would
+		// call dispatchLint again, creating a feedback loop.
+		// Fixes should be applied through explicit commands or user edits.
+		const args = ["check", ctx.filePath];
 
 		const result = spawnSync(ruffCommand!, args, {
 			encoding: "utf-8",
 			timeout: 30000,
-			shell: true,
+			shell: process.platform === "win32",
 		});
 
 		const raw = stripAnsi(result.stdout + result.stderr);

@@ -44,15 +44,29 @@ const architectRunner: RunnerDefinition = {
 		// Check for violations
 		const violations = architectClient.checkFile(relPath, content);
 		for (const v of violations) {
+			// Build message with inline fix guidance
+			let message = v.message;
+			let fixSuggestion: string | undefined = v.fix;
+			
+			if (v.fix) {
+				const fixPreview = v.fix.length > 60 ? `${v.fix.substring(0, 60)}...` : v.fix;
+				message += `\n💡 Suggested fix: ${fixPreview}`;
+			} else if (v.note) {
+				const notePreview = v.note.length > 80 ? `${v.note.substring(0, 80)}...` : v.note;
+				message += `\n📝 ${notePreview}`;
+			}
+			
 			diagnostics.push({
 				id: `architect-${v.line || 0}-${v.pattern}`,
-				message: v.message,
+				message,
 				filePath: ctx.filePath,
 				line: v.line,
-				severity: "error",
-				semantic: "blocking",
+				severity: "warning",
+				semantic: "warning",
 				tool: "architect",
 				rule: v.pattern,
+				fixable: !!v.fix,
+				fixSuggestion,
 			});
 		}
 
@@ -64,8 +78,8 @@ const architectRunner: RunnerDefinition = {
 				id: `architect-size-${lineCount}`,
 				message: sizeViolation.message,
 				filePath: ctx.filePath,
-				severity: "error",
-				semantic: "blocking",
+				severity: "warning",
+				semantic: "warning",
 				tool: "architect",
 				rule: "file-size-limit",
 				fixSuggestion: "Split into smaller modules",
@@ -77,9 +91,9 @@ const architectRunner: RunnerDefinition = {
 		}
 
 		return {
-			status: "failed",
+			status: "succeeded", // Warnings don't fail the run
 			diagnostics,
-			semantic: "blocking",
+			semantic: "warning",
 		};
 	},
 };

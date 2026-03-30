@@ -46,7 +46,7 @@ export class TypeCoverageClient {
 		const result = spawnSync("npx", ["type-coverage", "--version"], {
 			encoding: "utf-8",
 			timeout: 10000,
-			shell: true,
+			shell: process.platform === "win32",
 		});
 		this.available = !result.error && result.status === 0;
 		return this.available;
@@ -82,7 +82,7 @@ export class TypeCoverageClient {
 					encoding: "utf-8",
 					timeout: 30000,
 					cwd,
-					shell: true,
+					shell: process.platform === "win32",
 				},
 			);
 

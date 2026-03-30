@@ -16,6 +16,7 @@
 
 import type { FileKind } from "../file-kinds.js";
 import { detectFileKind } from "../file-kinds.js";
+import { isTestFile } from "../file-utils.js";
 
 import type {
 	BaselineStore,
@@ -69,30 +70,17 @@ export function getRunnersForKind(
 ): RunnerDefinition[] {
 	if (!kind) return [];
 	const runners: RunnerDefinition[] = [];
-	const isTestFile = filePath ? isTest(filePath) : false;
+	const isTest = filePath ? isTestFile(filePath) : false;
 
 	for (const runner of globalRegistry.values()) {
 		// Skip runners that shouldn't run on test files
-		if (isTestFile && runner.skipTestFiles) continue;
+		if (isTest && runner.skipTestFiles) continue;
 
 		if (runner.appliesTo.includes(kind) || runner.appliesTo.length === 0) {
 			runners.push(runner);
 		}
 	}
 	return runners.sort((a, b) => a.priority - b.priority);
-}
-
-function isTest(filePath: string): boolean {
-	const normalized = filePath.replace(/\\/g, "/");
-	return (
-		normalized.includes(".test.") ||
-		normalized.includes(".spec.") ||
-		normalized.includes("/test/") ||
-		normalized.includes("/tests/") ||
-		normalized.includes("__tests__/") ||
-		normalized.includes("test-utils") ||
-		normalized.startsWith("test-")
-	);
 }
 
 export function listRunners(): RunnerDefinition[] {
@@ -112,7 +100,7 @@ function checkToolAvailability(command: string): boolean {
 		const result = spawnSync(command, ["--version"], {
 			encoding: "utf-8",
 			timeout: 5000,
-			shell: true,
+			shell: process.platform === "win32",
 		});
 		const available = result.status === 0;
 		toolCache.set(command, available);
@@ -182,9 +170,10 @@ const EMOJI: Record<string, string> = {
 	none: "",
 };
 
-function formatDiagnostic(d: Diagnostic): string {
+export function formatDiagnostic(d: Diagnostic): string {
 	const line = d.line ? `L${d.line}: ` : "";
-	return `  ${line}${d.message}`;
+	const indented = d.message.split("\n").join("\n  ");
+	return `  ${line}${indented}`;
 }
 
 function formatDiagnostics(

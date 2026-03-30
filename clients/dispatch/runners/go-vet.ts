@@ -24,7 +24,7 @@ const goVetRunner: RunnerDefinition = {
 		const check = spawnSync("go", ["version"], {
 			encoding: "utf-8",
 			timeout: 5000,
-			shell: true,
+			shell: process.platform === "win32",
 		});
 
 		if (check.error || check.status !== 0) {
@@ -35,7 +35,7 @@ const goVetRunner: RunnerDefinition = {
 		const result = spawnSync("go", ["vet", ctx.filePath], {
 			encoding: "utf-8",
 			timeout: 30000,
-			shell: true,
+			shell: process.platform === "win32",
 		});
 
 		const raw = stripAnsi(result.stdout + result.stderr);

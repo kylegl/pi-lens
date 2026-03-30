@@ -60,7 +60,7 @@ export class BiomeClient {
 		const result = spawnSync("npx", ["@biomejs/biome", "--version"], {
 			encoding: "utf-8",
 			timeout: 10000,
-			shell: true,
+			shell: process.platform === "win32",
 		});
 
 		this.biomeAvailable = !result.error && result.status === 0;
@@ -117,7 +117,7 @@ export class BiomeClient {
 				{
 					encoding: "utf-8",
 					timeout: 15000,
-					shell: true,
+					shell: process.platform === "win32",
 				},
 			);
 
@@ -126,8 +126,8 @@ export class BiomeClient {
 			if (!output.trim()) return [];
 
 			return this.parseDiagnostics(output, absolutePath);
-		} catch (err: any) {
-			this.log(`Check error: ${err.message}`);
+		} catch (err) {
+			this.log(`Check error: ${err instanceof Error ? err.message : String(err)}`);
 			return [];
 		}
 	}
@@ -157,7 +157,7 @@ export class BiomeClient {
 				{
 					encoding: "utf-8",
 					timeout: 15000,
-					shell: true,
+					shell: process.platform === "win32",
 				},
 			);
 
@@ -174,8 +174,8 @@ export class BiomeClient {
 			}
 
 			return { success: true, changed };
-		} catch (err: any) {
-			return { success: false, changed: false, error: err.message };
+		} catch (err) {
+			return { success: false, changed: false, error: err instanceof Error ? err.message : String(err) };
 		}
 	}
 
@@ -217,7 +217,7 @@ export class BiomeClient {
 				{
 					encoding: "utf-8",
 					timeout: 15000,
-					shell: true,
+					shell: process.platform === "win32",
 				},
 			);
 
@@ -240,8 +240,8 @@ export class BiomeClient {
 			}
 
 			return { success: true, changed, fixed: fixableCount };
-		} catch (err: any) {
-			return { success: false, changed: false, fixed: 0, error: err.message };
+		} catch (err) {
+			return { success: false, changed: false, fixed: 0, error: err instanceof Error ? err.message : String(err) };
 		}
 	}
 
@@ -297,7 +297,7 @@ export class BiomeClient {
 				{
 					encoding: "utf-8",
 					timeout: 15000,
-					shell: true,
+					shell: process.platform === "win32",
 				},
 			);
 

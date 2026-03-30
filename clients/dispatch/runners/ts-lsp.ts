@@ -40,21 +40,31 @@ const tsLspRunner: RunnerDefinition = {
 			return { status: "succeeded", diagnostics: [], semantic: "none" };
 		}
 
+		// Get code fixes for all errors
+		const allFixes = tsClient.getAllCodeFixes(ctx.filePath);
+
 		// Convert to diagnostics
 		const diagnostics: Diagnostic[] = [];
 
 		for (const d of diags) {
 			const severity =
 				d.severity === 1 ? "error" : d.severity === 2 ? "warning" : "info";
+			const lineFixes = allFixes.get(d.range.start.line);
+			const fixSuggestion = lineFixes?.[0]?.description;
+
 			diagnostics.push({
 				id: `ts-${d.range.start.line}-${d.code}`,
-				message: d.message,
+				message: fixSuggestion
+					? `${d.message}\n💡 Quick fix: ${fixSuggestion}`
+					: d.message,
 				filePath: ctx.filePath,
 				line: d.range.start.line + 1,
 				severity,
 				semantic: d.severity === 1 ? "blocking" : "warning",
 				tool: "ts-lsp",
 				rule: `TS${d.code}`,
+				fixable: !!lineFixes && lineFixes.length > 0,
+				fixSuggestion: fixSuggestion,
 			});
 		}
 

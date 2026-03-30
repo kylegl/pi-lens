@@ -53,7 +53,7 @@ function isPyrightAvailable(cwd?: string): boolean {
 	const check = spawnSync(command, ["--version"], {
 		encoding: "utf-8",
 		timeout: 5000,
-		shell: true,
+		shell: process.platform === "win32",
 	});
 	pyrightAvailable = !check.error && check.status === 0;
 	if (pyrightAvailable) pyrightCommand = command;
@@ -76,7 +76,7 @@ const pyrightRunner: RunnerDefinition = {
 		const result = spawnSync(pyrightCommand!, ["--outputjson", ctx.filePath], {
 			encoding: "utf-8",
 			timeout: 60000,
-			shell: true,
+			shell: process.platform === "win32",
 		});
 
 		// Pyright returns non-zero when errors found, that's OK

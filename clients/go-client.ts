@@ -74,7 +74,7 @@ export class GoClient {
 					const result = spawnSync(p, ["version"], {
 						encoding: "utf-8",
 						timeout: 3000,
-						shell: true,
+						shell: process.platform === "win32",
 					});
 					if (!result.error && result.status === 0) {
 						this.goPath = p;
@@ -110,7 +110,7 @@ export class GoClient {
 		const result = spawnSync("gopls", ["version"], {
 			encoding: "utf-8",
 			timeout: 5000,
-			shell: true,
+			shell: process.platform === "win32",
 		});
 
 		this.goplsAvailable = !result.error && result.status === 0;
@@ -147,7 +147,7 @@ export class GoClient {
 				encoding: "utf-8",
 				timeout: 15000,
 				cwd: dir,
-				shell: true,
+				shell: process.platform === "win32",
 			});
 
 			const output = (result.stderr || "") + (result.stdout || "");
@@ -169,7 +169,7 @@ export class GoClient {
 				encoding: "utf-8",
 				timeout: 30000,
 				cwd,
-				shell: true,
+				shell: process.platform === "win32",
 			});
 
 			const output = (result.stderr || "") + (result.stdout || "");

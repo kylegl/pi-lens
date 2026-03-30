@@ -159,6 +159,16 @@ export function createAutoLoop(
 			return;
 		}
 
+		// Check if agent is waiting for manual fixes (indicated in the prompt)
+		// If the last message says "When done, run..." we should NOT auto-continue
+		const awaitingManualFix = textContent.includes("When done, run");
+		if (awaitingManualFix) {
+			console.error("[auto-loop] Paused - awaiting agent manual fixes");
+			updateStatus(ctx);
+			// Don't send followUp - wait for agent to manually continue
+			return;
+		}
+
 		// Check max iterations
 		state.iteration++;
 		if (state.iteration >= state.maxIterations) {
@@ -170,6 +180,9 @@ export function createAutoLoop(
 		updateStatus(ctx);
 		const continueMsg =
 			config.continuePrompt || `Run ${config.command} to continue.`;
+		console.error(
+			`[auto-loop] Triggering iteration ${state.iteration + 1}/${state.maxIterations}: ${config.command}`,
+		);
 		pi.sendUserMessage(
 			`🔄 Auto-loop (${state.iteration + 1}/${state.maxIterations}): ${continueMsg}`,
 			{ deliverAs: "followUp" },

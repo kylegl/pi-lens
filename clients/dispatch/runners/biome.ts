@@ -22,7 +22,7 @@ function isBiomeAvailable(): boolean {
 	const check = spawnSync("biome", ["--version"], {
 		encoding: "utf-8",
 		timeout: 5000,
-		shell: true,
+		shell: process.platform === "win32",
 	});
 	biomeAvailable = !check.error && check.status === 0;
 	return biomeAvailable;
@@ -40,15 +40,17 @@ const biomeRunner: RunnerDefinition = {
 			return { status: "skipped", diagnostics: [], semantic: "none" };
 		}
 
-		// Run biome check (use direct command, not npx)
-		const args = ctx.autofix
-			? ["check", "--write", ctx.filePath]
-			: ["check", ctx.filePath];
+		// IMPORTANT: Never use --write in dispatch runner to prevent infinite loops.
+		// Writing to the file would trigger another tool_result event, which would
+		// call dispatchLint again, creating a feedback loop.
+		// Use /lens-format command for explicit formatting, or autofix flags on
+		// the write/edit tools directly.
+		const args = ["check", ctx.filePath];
 
 		const result = spawnSync("biome", args, {
 			encoding: "utf-8",
 			timeout: 30000,
-			shell: true,
+			shell: process.platform === "win32",
 		});
 
 		const output = result.stdout + result.stderr;
@@ -57,8 +59,8 @@ const biomeRunner: RunnerDefinition = {
 			return { status: "succeeded", diagnostics: [], semantic: "none" };
 		}
 
-		// Parse diagnostics
-		const diagnostics = parseBiomeOutput(output, ctx.filePath, ctx.autofix);
+		// Parse diagnostics (never autofix in dispatch to prevent loops)
+		const diagnostics = parseBiomeOutput(output, ctx.filePath, false);
 
 		return {
 			status: "failed",

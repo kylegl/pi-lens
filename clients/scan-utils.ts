@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { EXCLUDED_DIRS, isTestFile } from "./file-utils.js";
 
 /**
  * Common parsing logic for ast-grep JSON output (handles both array and NDJSON).
@@ -32,7 +33,7 @@ export function shouldIgnoreFile(
 	isTsProject: boolean,
 ): boolean {
 	const relPath = filePath.replace(/\\/g, "/");
-	const basename = path.basename(relPath);
+	const _basename = path.basename(relPath);
 
 	// Ignore compiled JS in TS projects
 	const isJs =
@@ -42,25 +43,10 @@ export function shouldIgnoreFile(
 	if (isTsProject && isJs) return true;
 
 	// Ignore test scripts and common test patterns
-	if (
-		basename.startsWith("test-") ||
-		basename.includes(".test.") ||
-		basename.includes(".spec.")
-	) {
-		return true;
-	}
+	if (isTestFile(filePath)) return true;
 
 	// Ignore hidden directories and common build outputs
-	if (
-		relPath.includes("/node_modules/") ||
-		relPath.includes("/.git/") ||
-		relPath.includes("/dist/") ||
-		relPath.includes("/build/") ||
-		relPath.includes("/.next/") ||
-		relPath.includes("/.pi-lens/")
-	) {
-		return true;
-	}
+	if (EXCLUDED_DIRS.some((d) => relPath.includes(`/${d}/`))) return true;
 
 	return false;
 }
@@ -83,17 +69,7 @@ export function getSourceFiles(dir: string, isTsProject: boolean): string[] {
 		for (const entry of entries) {
 			const full = path.join(d, entry.name);
 			if (entry.isDirectory()) {
-				if (
-					[
-						"node_modules",
-						".git",
-						"dist",
-						"build",
-						".next",
-						".pi-lens",
-					].includes(entry.name)
-				)
-					continue;
+				if (EXCLUDED_DIRS.includes(entry.name)) continue;
 				scan(full);
 			} else if (/\.(ts|tsx|js|jsx|py|go|rs)$/.test(entry.name)) {
 				// Skip compiled JS if it's a TS project

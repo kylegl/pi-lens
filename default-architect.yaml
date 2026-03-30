@@ -19,10 +19,13 @@ rules:
     must_not:
       - pattern: '[a-zA-Z]:\\(?:Users|Program Files|Windows|Temp)\\[^\\]*'
         message: "No absolute Windows paths — breaks CI and cross-platform builds."
+        fix: "Use path.join(__dirname, 'relative/path') or process.cwd()"
       - pattern: '/(?:home|Users|usr|etc|var)/[a-zA-Z0-9_-]+/'
         message: "Potential absolute Unix path detected — use relative paths or path.join()."
+        fix: "Use path.join(process.cwd(), 'relative/path') or path.resolve()"
       - pattern: 'https?://localhost:[0-9]+'
         message: "No hardcoded localhost URLs — use environment variables or a config service."
+        fix: "Use process.env.API_URL || 'http://localhost:3000'"
 
   # --- Complexity & Technical Debt ---
   - pattern: "**/*.{ts,tsx,js,jsx,py,go,rs}"
@@ -30,16 +33,23 @@ rules:
     must_not:
       - pattern: '(?:\s{8,}.*\n){5,}'
         message: "Deep nesting detected (4+ levels). Refactor into smaller functions to reduce cognitive load."
+        note: "Extract inner blocks into named functions. Early returns help flatten nesting."
       - pattern: '(?:(?://|#).*\n){10,}'
         message: "Large block of commented-out code detected. This is dead code — delete it and rely on Git history."
+        fix: "Delete the commented code. Git history preserves it if needed later."
 
   # --- Reliability & Fragility ---
   - pattern: "**/*.{ts,tsx,js,jsx,py,go,rs}"
     must_not:
       - pattern: '(?:catch|except)\s*\(?.*?\)?\s*\{\s*\}'
         message: "No empty catch/except blocks. Swallowing errors makes debugging impossible — at least log the error."
+        fix: |
+          console.error(`[context] Operation failed:`, err);
+          // or: throw err;
+          // or: return null;
       - pattern: '\b(?:password|secret|api_?key|token|private_?key)\b\s*[:=]\s*(?:"|'')[^''"]{8,}(?:"|'')'
         message: "No hardcoded secrets — use environment variables or a secrets manager."
+        fix: "Use process.env.SECRET_NAME and add to .env.example (not .env!)"
 
 # =============================================================================
 # JS/TS-SPECIFIC RULES (Node.js & Frontend)
@@ -50,6 +60,10 @@ rules:
     must_not:
       - pattern: ':\s*any\b|as\s+any\b'
         message: "No 'any' types — use 'unknown' or define a proper interface to maintain type safety."
+        fix: |
+          // Instead of: x as any
+          x as unknown as SpecificType
+          // Or define proper interface and use it
     must:
       - "Use strict TypeScript mode"
 
@@ -66,12 +80,15 @@ rules:
     must_not:
       - pattern: '\.then\('
         message: "Prefer async/await over .then() chains for better readability and error handling."
+        note: |
+          Convert: promise.then(x => y).catch(e => z)
+          To: try { const x = await promise; y; } catch (e) { z; }
 
   # --- Grep-ability & Agent Search ---
   # Note: 'export default' is acceptable for entry points (index.ts)
   - pattern: "**/*.{ts,tsx}"
     must_not:
-      - pattern: "from\s+['\"]\.\./\.\./\.\./"
+      - pattern: "from\\s+['\"]\\.\\./\\.\\./\\.\\./"
         message: "Avoid deep relative imports (3+ levels) — use absolute imports (@app/...) for agent reasoning."
 
 # =============================================================================

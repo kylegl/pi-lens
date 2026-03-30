@@ -9,12 +9,34 @@
 
 import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
+import * as path from "node:path";
 import type {
 	Diagnostic,
 	DispatchContext,
 	RunnerDefinition,
 	RunnerResult,
 } from "../types.js";
+
+// Simple YAML fix: field extractor
+function extractFixFromRule(ruleId: string, ruleDir: string): string | undefined {
+	try {
+		const rulePath = `${ruleDir}/${ruleId}.yml`;
+		if (!fs.existsSync(rulePath)) return undefined;
+		
+		const content = fs.readFileSync(rulePath, "utf-8");
+		const fixMatch = content.match(/^fix:\s*\|?([\s\S]*?)(?=^\w|^rule:|\Z)/m);
+		if (fixMatch) {
+			return fixMatch[1]
+				.split("\n")
+				.map((line) => line.replace(/^\s*\|?\s*/, ""))
+				.filter((line) => line.length > 0)
+				.join("\n");
+		}
+	} catch {
+		// Ignore errors
+	}
+	return undefined;
+}
 
 const astGrepRunner: RunnerDefinition = {
 	id: "ast-grep",
@@ -24,11 +46,11 @@ const astGrepRunner: RunnerDefinition = {
 	skipTestFiles: true, // Many rules are noisy in tests
 
 	async run(ctx: DispatchContext): Promise<RunnerResult> {
-		// Check if ast-grep is available
-		const check = spawnSync("sg", ["--version"], {
+		// Check if ast-grep is available (use npx for local installs)
+		const check = spawnSync("npx", ["sg", "--version"], {
 			encoding: "utf-8",
 			timeout: 5000,
-			shell: true,
+			shell: process.platform === "win32",
 		});
 
 		if (check.error || check.status !== 0) {
@@ -41,13 +63,13 @@ const astGrepRunner: RunnerDefinition = {
 			return { status: "skipped", diagnostics: [], semantic: "none" };
 		}
 
-		// Run ast-grep scan on the file
-		const args = ["scan", "--config", configPath, "--json", ctx.filePath];
+		// Run ast-grep scan on the file (use npx for local installs)
+		const args = ["sg", "scan", "--config", configPath, "--json", ctx.filePath];
 
-		const result = spawnSync("sg", args, {
+		const result = spawnSync("npx", args, {
 			encoding: "utf-8",
 			timeout: 30000,
-			shell: true,
+			shell: process.platform === "win32",
 		});
 
 		const raw = result.stdout + result.stderr;
@@ -57,7 +79,7 @@ const astGrepRunner: RunnerDefinition = {
 		}
 
 		// Parse results
-		const diagnostics = parseAstGrepOutput(raw, ctx.filePath);
+		const diagnostics = parseAstGrepOutput(raw, ctx.filePath, configPath);
 
 		if (diagnostics.length === 0) {
 			return { status: "succeeded", diagnostics: [], semantic: "none" };
@@ -88,28 +110,61 @@ function findAstGrepConfig(cwd: string): string | undefined {
 	return undefined;
 }
 
-function parseAstGrepOutput(raw: string, filePath: string): Diagnostic[] {
+function parseAstGrepOutput(
+	raw: string,
+	filePath: string,
+	_configPath?: string,
+): Diagnostic[] {
 	const diagnostics: Diagnostic[] = [];
 
 	// Try to parse as JSON
+	// Determine rule directory for fix: extraction
+	const ruleDir = _configPath
+		? path.dirname(_configPath).replace("/.sgconfig.yml", "/rules")
+		: path.join(process.cwd(), "rules", "ast-grep-rules", "rules");
+	
 	try {
 		const parsed = JSON.parse(raw);
 		if (Array.isArray(parsed)) {
 			for (const item of parsed) {
 				const line = item.range?.start?.line || 1;
+				const ruleId = item.rule || "unknown";
+				
+				// Build message with inline fix suggestion
+				let message = item.message || item.lines || "";
+				let fixSuggestion: string | undefined;
+
+				if (item.replacement) {
+					// Show the actual code change inline in the message
+					const replacementPreview =
+						item.replacement.length > 40
+							? `${item.replacement.substring(0, 40)}...`
+							: item.replacement;
+					message += `\n💡 Suggested fix: → "${replacementPreview}"`;
+					fixSuggestion = `Replace with: ${item.replacement}`;
+				} else {
+					// Try to get fix: from rule YAML
+					const ruleFix = extractFixFromRule(ruleId, ruleDir);
+					if (ruleFix) {
+						const fixPreview = ruleFix.length > 60
+							? `${ruleFix.substring(0, 60)}...`
+							: ruleFix;
+						message += `\n💡 Suggested fix:\n${fixPreview}`;
+						fixSuggestion = ruleFix;
+					}
+				}
+
 				diagnostics.push({
-					id: `ast-grep-${line}-${item.rule || "unknown"}`,
-					message: item.message || item.lines || "",
+					id: `ast-grep-${line}-${ruleId}`,
+					message,
 					filePath,
 					line,
 					severity: item.severity === "error" ? "error" : "warning",
 					semantic: item.severity === "error" ? "blocking" : "warning",
 					tool: "ast-grep",
-					rule: item.rule || "unknown",
-					fixable: !!item.replacement,
-					fixSuggestion: item.replacement
-						? "Run `sg fix` to auto-fix"
-						: undefined,
+					rule: ruleId,
+					fixable: !!item.replacement || !!fixSuggestion,
+					fixSuggestion,
 				});
 			}
 		}

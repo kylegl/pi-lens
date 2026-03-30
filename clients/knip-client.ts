@@ -53,7 +53,7 @@ export class KnipClient {
 		const result = spawnSync("npx", ["knip", "--version"], {
 			encoding: "utf-8",
 			timeout: 10000,
-			shell: true,
+			shell: process.platform === "win32",
 		});
 
 		this.knipAvailable = !result.error && result.status === 0;
@@ -97,7 +97,7 @@ export class KnipClient {
 				encoding: "utf-8",
 				timeout: 30000,
 				cwd: targetDir,
-				shell: true,
+				shell: process.platform === "win32",
 			});
 
 			// Knip exits 0 on success (even with issues), 1 on errors

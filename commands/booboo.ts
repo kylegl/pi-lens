@@ -11,7 +11,12 @@ import type { ComplexityClient } from "../clients/complexity-client.js";
 import type { DependencyChecker } from "../clients/dependency-checker.js";
 import type { JscpdClient } from "../clients/jscpd-client.js";
 import type { KnipClient } from "../clients/knip-client.js";
+import {
+	buildProjectIndex,
+	type ProjectIndex,
+} from "../clients/project-index.js";
 import { getSourceFiles } from "../clients/scan-utils.js";
+import { calculateSimilarity } from "../clients/state-matrix.js";
 import type { TodoScanner } from "../clients/todo-scanner.js";
 import type { TypeCoverageClient } from "../clients/type-coverage-client.js";
 
@@ -39,6 +44,26 @@ export async function handleBooboo(
 ) {
 	const targetPath = args.trim() || ctx.cwd || process.cwd();
 	ctx.ui.notify("🔍 Running full codebase review...", "info");
+
+	// Load false positives from fix session to filter them out
+	const sessionFile = path.join(process.cwd(), ".pi-lens", "fix-session.json");
+	let falsePositives: string[] = [];
+	try {
+		const sessionData = JSON.parse(
+			nodeFs.readFileSync(sessionFile, "utf-8") || "{}"
+		);
+		falsePositives = sessionData.falsePositives || [];
+	} catch {
+		// No session file yet
+	}
+
+	// Helper to check if an issue is marked as false positive
+	const isFalsePositive = (category: string, file: string, line?: number): boolean => {
+		const fpKey = line !== undefined 
+			? `${category}:${file}:${line}`
+			: `${category}:${file}`;
+		return falsePositives.some((fp) => fp === fpKey || fp.startsWith(`${category}:${file}`));
+	};
 
 	// Summary counts for terminal display
 	const summaryItems: {
@@ -83,7 +108,7 @@ export async function handleBooboo(
 				{
 					encoding: "utf-8",
 					timeout: 30000,
-					shell: true,
+					shell: process.platform === "win32",
 					maxBuffer: 32 * 1024 * 1024, // 32MB
 				},
 			);
@@ -91,6 +116,7 @@ export async function handleBooboo(
 			const output = result.stdout || result.stderr || "";
 			if (output.trim() && result.status !== undefined) {
 				const issues: Array<{
+					file: string;
 					line: number;
 					rule: string;
 					message: string;
@@ -128,32 +154,53 @@ export async function handleBooboo(
 						0;
 
 					issues.push({
+						file: item.file || item.path || targetPath,
 						line: lineNum + 1,
 						rule: ruleId,
 						message: message,
 					});
 				}
 
-				if (issues.length > 0) {
+				// Filter out false positives
+				const filteredIssues = issues.filter((issue) => 
+					!isFalsePositive("ast_issues", issue.file, issue.line)
+				);
+				
+				if (filteredIssues.length > 0) {
 					summaryItems.push({
 						category: "ast-grep",
-						count: issues.length,
-						severity: issues.length > 10 ? "🔴" : "🟡",
+						count: filteredIssues.length,
+						severity: filteredIssues.length > 10 ? "🔴" : "🟡",
 						fixable: true,
 					});
 
-					let fullSection = `## ast-grep (Structural Issues)\n\n**${issues.length} issue(s) found**\n\n`;
+					let fullSection = `## ast-grep (Structural Issues)\n\n**${filteredIssues.length} issue(s) found**\n\n`;
 					fullSection +=
 						"| Line | Rule | Message |\n|------|------|--------|\n";
-					for (const issue of issues) {
+					for (const issue of filteredIssues) {
 						fullSection += `| ${issue.line} | ${issue.rule} | ${issue.message} |\n`;
 					}
+					
+					// Add fix guidance for rules that have it
+					fullSection += "\n### 💡 How to Fix\n\n";
+					const seenRules = new Set<string>();
+					for (const issue of filteredIssues.slice(0, 5)) { // Show first 5 unique fixes
+						if (seenRules.has(issue.rule)) continue;
+						seenRules.add(issue.rule);
+						const ruleDesc = clients.astGrep.getRuleDescription?.(issue.rule);
+						if (ruleDesc?.note || ruleDesc?.fix) {
+							fullSection += `**${issue.rule}:**\n`;
+							if (ruleDesc.note) fullSection += `${ruleDesc.note}\n\n`;
+							if (ruleDesc.fix) fullSection += `Suggested fix:\n\`\`\`typescript\n${ruleDesc.fix}\n\`\`\`\n\n`;
+						}
+					}
+					
 					fullReport.push(fullSection);
 				}
 			}
 		} catch (err) {
-			const _err = err as any;
-			// Ignored
+			// Ast-grep scan failed, skip this section
+			void err;
 		}
 	}
 
@@ -183,6 +230,53 @@ export async function handleBooboo(
 			}
 			fullReport.push(fullSection);
 		}
+	}
+
+	// Part 2b: Semantic similarity (Amain 57×72 matrix)
+	try {
+		ctx.ui.notify("🔍 Analyzing semantic code similarity...", "info");
+		const { glob } = await import("glob");
+		const sourceFiles = await glob("**/*.ts", {
+			cwd: targetPath,
+			ignore: [
+				"**/node_modules/**",
+				"**/*.test.ts",
+				"**/*.spec.ts",
+				"**/dist/**",
+			],
+		});
+
+		if (sourceFiles.length > 0) {
+			const absoluteFiles = sourceFiles.map((f) => path.join(targetPath, f));
+			const index = await buildProjectIndex(targetPath, absoluteFiles);
+
+			// Find top similar pairs
+			const topPairs = findTopSimilarPairs(index, 10);
+
+			if (topPairs.length > 0) {
+				summaryItems.push({
+					category: "Semantic Duplicates",
+					count: topPairs.length,
+					severity: "🟡",
+					fixable: true,
+				});
+
+				let fullSection = `## Semantic Duplicates (Amain Algorithm)\n\n`;
+				fullSection += `**${topPairs.length} pair(s) with >75% semantic similarity**\n\n`;
+				fullSection +=
+					"Functions with different names/variables but similar logic structures.\n\n";
+
+				for (const pair of topPairs) {
+					fullSection += `### ${pair.func1} ↔ ${pair.func2}\n\n`;
+					fullSection += `- Similarity: **${(pair.similarity * 100).toFixed(1)}%**\n`;
+					fullSection += `- Consider consolidating or extracting shared logic\n\n`;
+				}
+				fullReport.push(fullSection);
+			}
+		}
+	} catch (err) {
+		// Skip if similarity analysis fails
+		console.error("[booboo] Semantic similarity analysis failed:", err);
 	}
 
 	// Part 3: Complexity metrics
@@ -477,36 +571,142 @@ export async function handleBooboo(
 		}
 	}
 
+	// --- Create structured JSON report (for AI processing) ---
 	nodeFs.mkdirSync(reviewDir, { recursive: true });
 	const projectName = path.basename(process.cwd());
-	const mdReport = `# Code Review: ${projectName}\n\n**Scanned:** ${new Date().toISOString()}\n\n**Path:** \`${targetPath}\`\n\n---\n\n${fullReport.join("\n")}`;
-	const reportPath = path.join(reviewDir, `booboo-${timestamp}.md`);
-	nodeFs.writeFileSync(reportPath, mdReport, "utf-8");
 
-	// Build summary table for terminal
+	const totalIssues = summaryItems.reduce((sum, s) => sum + s.count, 0);
+	const fixableCount = summaryItems
+		.filter((s) => s.fixable)
+		.reduce((sum, s) => sum + s.count, 0);
+	const refactorNeeded = summaryItems
+		.filter((s) => !s.fixable)
+		.reduce((sum, s) => sum + s.count, 0);
+
+	const jsonReport = {
+		meta: {
+			timestamp: new Date().toISOString(),
+			project: projectName,
+			path: targetPath,
+			totalIssues,
+			fixableCount,
+			refactorNeeded,
+		},
+		byCategory: summaryItems.reduce(
+			(acc, item) => {
+				acc[item.category] = {
+					count: item.count,
+					severity: item.severity,
+					fixable: item.fixable,
+					falsePositivePrefix: `${item.category.toLowerCase().replace(/\s+/g, "-")}:`,
+				};
+				return acc;
+			},
+			{} as Record<
+				string,
+				{
+					count: number;
+					severity: string;
+					fixable: boolean;
+					falsePositivePrefix: string;
+				}
+			>,
+		),
+		howToMarkFalsePositive: {
+			command: "/lens-booboo-fix --false-positive",
+			format: "<category>:<file>[:<line>]",
+			examples: [
+				"similarity:clients/runners/utils.ts:49",
+				"dead-code:clients/subprocess-client.ts",
+				"unused:architect-client.ts:ArchitectRule",
+			],
+		},
+		sessionFile: path.join(process.cwd(), ".pi-lens", "fix-session.json"),
+		details: fullReport.join("\n"),
+	};
+
+	const jsonPath = path.join(reviewDir, `booboo-${timestamp}.json`);
+	nodeFs.writeFileSync(jsonPath, JSON.stringify(jsonReport, null, 2), "utf-8");
+
+	// --- Create markdown report (for human reading) ---
+	const mdReport = `# Code Review: ${projectName}
+
+**Scanned:** ${jsonReport.meta.timestamp}
+
+**Path:** \`${targetPath}\`
+
+**Summary:** ${jsonReport.meta.totalIssues} issues | ${jsonReport.meta.fixableCount} fixable | ${jsonReport.meta.refactorNeeded} need refactor
+
+---
+
+${fullReport.join("\n")}`;
+	const mdPath = path.join(reviewDir, `booboo-${timestamp}.md`);
+	nodeFs.writeFileSync(mdPath, mdReport, "utf-8");
+
+	// --- Brief terminal summary (triggers AI to read JSON) ---
 	if (summaryItems.length === 0) {
-		ctx.ui.notify("✓ Code review clean — saved to .pi-lens/reviews/", "info");
+		ctx.ui.notify("✓ Code review clean", "info");
 	} else {
-		const totalIssues = summaryItems.reduce((sum, s) => sum + s.count, 0);
-		const fixableCount = summaryItems
-			.filter((s) => s.fixable)
-			.reduce((sum, s) => sum + s.count, 0);
-		const refactorNeeded = totalIssues - fixableCount;
+		const { totalIssues, fixableCount, refactorNeeded } = jsonReport.meta;
+		const summaryLines = [
+			`📊 Code Review: ${totalIssues} issues`,
+			`  🔧 ${fixableCount} fixable | 🏗️ ${refactorNeeded} refactor`,
+			`📄 JSON: ${jsonPath}`,
+			`🚀 Run \`/lens-booboo-fix\` to auto-fix`,
+			`🚫 Mark false positive: \`/lens-booboo-fix --false-positive "<category>:<file>"\``,
+		];
 
-		let summary = `📊 Code Review: ${totalIssues} issues found\n`;
-		summary += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-		for (const item of summaryItems) {
-			summary += `${item.severity} ${item.category}: ${item.count}${item.fixable ? " (fixable)" : ""}\n`;
-		}
-		summary += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-		if (fixableCount > 0 && refactorNeeded > 0) {
-			summary += `🔧 ${fixableCount} fixable via /lens-booboo-fix | 🏗️ ${refactorNeeded} need /lens-booboo-refactor\n`;
-		} else if (fixableCount > 0) {
-			summary += `🔧 All ${fixableCount} issues fixable via /lens-booboo-fix\n`;
-		} else {
-			summary += `🏗️ All issues need /lens-booboo-refactor\n`;
-		}
-		summary += `📄 Full report: ${reportPath}`;
-		ctx.ui.notify(summary, "info");
+		ctx.ui.notify(summaryLines.join("\n"), "info");
 	}
+}
+
+// ============================================================================
+// Semantic Similarity Helper
+// ============================================================================
+
+interface SimilarPair {
+	func1: string;
+	func2: string;
+	similarity: number;
+}
+
+/**
+ * Find top N most similar function pairs in the project index
+ * Uses canonical pair ordering to avoid duplicates (A,B) vs (B,A)
+ */
+function findTopSimilarPairs(
+	index: ProjectIndex,
+	maxPairs: number,
+): SimilarPair[] {
+	const entries = Array.from(index.entries.values());
+	const seenPairs = new Set<string>();
+	const pairs: SimilarPair[] = [];
+
+	for (let i = 0; i < entries.length; i++) {
+		for (let j = i + 1; j < entries.length; j++) {
+			const entry1 = entries[i];
+			const entry2 = entries[j];
+
+			// Skip if same file (we want cross-file duplicates)
+			if (entry1.filePath === entry2.filePath) continue;
+
+			const similarity = calculateSimilarity(entry1.matrix, entry2.matrix);
+
+			if (similarity >= 0.75) {
+				// Canonical pair key (sorted to avoid duplicates)
+				const pairKey = [entry1.id, entry2.id].sort().join("::");
+				if (seenPairs.has(pairKey)) continue;
+				seenPairs.add(pairKey);
+
+				pairs.push({
+					func1: entry1.id,
+					func2: entry2.id,
+					similarity,
+				});
+			}
+		}
+	}
+
+	// Sort by similarity descending, take top N
+	return pairs.sort((a, b) => b.similarity - a.similarity).slice(0, maxPairs);
 }
