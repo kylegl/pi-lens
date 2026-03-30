@@ -55,8 +55,9 @@ export class JscpdClient {
 	/**
 	 * Scan a directory for duplicate code blocks.
 	 * Uses a temp output dir to capture JSON report.
+	 * @param isTsProject - If true, excludes .js files (they're compiled artifacts in TS projects)
 	 */
-	scan(cwd: string, minLines = 5, minTokens = 50): JscpdResult {
+	scan(cwd: string, minLines = 5, minTokens = 50, isTsProject = false): JscpdResult {
 		// Return early for non-existent or empty directories
 		if (!fs.existsSync(cwd)) {
 			return {
@@ -94,6 +95,12 @@ export class JscpdClient {
 		const outDir = path.join(os.tmpdir(), `pi-lens-jscpd-${Date.now()}`);
 		fs.mkdirSync(outDir, { recursive: true });
 
+		// Build ignore pattern - exclude .js in TS projects (compiled artifacts)
+		const baseIgnores = "**/node_modules/**,**/dist/**,**/build/**,**/.git/**,**/.pi-lens/**,**/*.md,**/*.txt,**/*.json,**/*.yaml,**/*.yml,**/*.toml,**/*.lock,**/*.test.*,**/*.spec.*,**/*.poc.test.*,**/__tests__/**,**/tests/**";
+		const ignorePattern = isTsProject
+			? `${baseIgnores},**/*.js,**/*.jsx`
+			: baseIgnores;
+
 		try {
 			safeSpawn(
 				"npx",
@@ -109,7 +116,7 @@ export class JscpdClient {
 					"--output",
 					outDir,
 					"--ignore",
-					"**/node_modules/**,**/dist/**,**/build/**,**/.git/**,**/.pi-lens/**,**/*.md,**/*.txt,**/*.json,**/*.yaml,**/*.yml,**/*.toml,**/*.lock,**/*.test.*,**/*.spec.*,**/*.poc.test.*,**/__tests__/**,**/tests/**"
+					ignorePattern,
 				],
 				{
 					timeout: 30000,

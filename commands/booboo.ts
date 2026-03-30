@@ -75,6 +75,11 @@ export async function handleBooboo(
 	const targetPath = args.trim() || ctx.cwd || process.cwd();
 	ctx.ui.notify("🔍 Running full codebase review...", "info");
 
+	// Detect project type once for all runners
+	const isTsProject = nodeFs.existsSync(
+		path.join(targetPath, "tsconfig.json"),
+	);
+
 	// Load false positives from fix session to filter them out
 	const sessionFile = path.join(process.cwd(), ".pi-lens", "fix-session.json");
 	let falsePositives: string[] = [];
@@ -381,9 +386,6 @@ export async function handleBooboo(
 		const results: import("../clients/complexity-client.js").FileComplexity[] =
 			[];
 		const aiSlopIssues: string[] = [];
-		const isTsProject = nodeFs.existsSync(
-			path.join(targetPath, "tsconfig.json"),
-		);
 		const files = getSourceFiles(targetPath, isTsProject).filter(shouldIncludeFile);
 
 		for (const fullPath of files) {
@@ -584,7 +586,8 @@ export async function handleBooboo(
 			return { findings: 0, status: "skipped" };
 		}
 
-		const jscpdResult = clients.jscpd.scan(targetPath);
+		// In TS projects, exclude .js files (they're compiled artifacts)
+		const jscpdResult = clients.jscpd.scan(targetPath, 5, 50, isTsProject);
 
 		// Filter out test file duplicates using centralized exclusion
 		const filteredClones = jscpdResult.clones.filter(
@@ -711,6 +714,11 @@ export async function handleBooboo(
 			return { findings: 0, status: "skipped" };
 		}
 
+		// Detect TypeScript project - skip .js files in TS projects (compiled artifacts)
+		const isTsProject = nodeFs.existsSync(
+			path.join(targetPath, "tsconfig.json"),
+		);
+
 		const archViolations: Array<{ file: string; message: string }> = [];
 		const archScanDir = (dir: string) => {
 			for (const entry of nodeFs.readdirSync(dir, { withFileTypes: true })) {
@@ -720,6 +728,13 @@ export async function handleBooboo(
 					archScanDir(full);
 				} else if (/\.(ts|tsx|js|jsx|py|go|rs)$/.test(entry.name)) {
 					if (isTestFile(full)) continue;
+					// In TS projects, skip .js files (they're compiled artifacts)
+					if (
+						isTsProject &&
+						/\.(js|jsx)$/.test(entry.name) &&
+						nodeFs.existsSync(full.replace(/\.(js|jsx)$/, ".ts"))
+					)
+						continue;
 					const relPath = path.relative(targetPath, full).replace(/\\/g, "/");
 					const content = nodeFs.readFileSync(full, "utf-8");
 					const lineCount = content.split("\n").length;
