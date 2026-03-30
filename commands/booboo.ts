@@ -215,6 +215,7 @@ export async function handleBooboo(
 					fullReport.push(fullSection);
 				}
 			}
+			ctx.ui.notify(`✓ Part 1: Design smells (${summaryItems.find(s => s.category === "ast-grep")?.count ?? 0} issues)`, "info");
 		} catch (err) {
 			// Ast-grep scan failed, skip this section
 			void err;
@@ -247,6 +248,8 @@ export async function handleBooboo(
 			}
 			fullReport.push(fullSection);
 		}
+		const simCount = summaryItems.find(s => s.category === "Similar Functions")?.count ?? 0;
+		ctx.ui.notify(`✓ Part 2: Similar functions (${simCount} groups)`, "info");
 	}
 
 	// Part 2b: Semantic similarity (Amain 57×72 matrix)
@@ -291,6 +294,8 @@ export async function handleBooboo(
 				fullReport.push(fullSection);
 			}
 		}
+		const semCount = summaryItems.find(s => s.category === "Semantic Duplicates")?.count ?? 0;
+		ctx.ui.notify(`✓ Part 2b: Semantic similarity (${semCount} pairs)`, "info");
 	} catch (err) {
 		// Skip if similarity analysis fails
 		console.error("[booboo] Semantic similarity analysis failed:", err);
@@ -425,6 +430,8 @@ export async function handleBooboo(
 		}
 		fullReport.push(fullSection);
 	}
+	const complexityCount = summaryItems.find(s => s.category === "Complexity")?.count ?? 0;
+	ctx.ui.notify(`✓ Part 3: Complexity metrics (${results.length} files, ${complexityCount} issues)`, "info");
 
 	// Part 4: TODOs
 	const todoResult = clients.todo.scanDirectory(targetPath);
@@ -447,6 +454,8 @@ export async function handleBooboo(
 		fullSection += "\n";
 		fullReport.push(fullSection);
 	}
+	const todoCount = summaryItems.find(s => s.category === "TODOs")?.count ?? 0;
+	ctx.ui.notify(`✓ Part 4: TODOs (${todoCount} items)`, "info");
 
 	// Part 5: Dead code
 	if (clients.knip.isAvailable()) {
@@ -471,6 +480,8 @@ export async function handleBooboo(
 			fullReport.push(fullSection);
 		}
 	}
+	const deadCodeCount = summaryItems.find(s => s.category === "Dead Code")?.count ?? 0;
+	ctx.ui.notify(`✓ Part 5: Dead code (${deadCodeCount} issues)`, "info");
 
 	// Part 6: Duplicate code
 	if (clients.jscpd.isAvailable()) {
@@ -495,6 +506,8 @@ export async function handleBooboo(
 			fullReport.push(fullSection);
 		}
 	}
+	const dupeCount = summaryItems.find(s => s.category === "Duplicates")?.count ?? 0;
+	ctx.ui.notify(`✓ Part 6: Duplicate code (${dupeCount} blocks)`, "info");
 
 	// Part 7: Type coverage
 	if (clients.typeCoverage.isAvailable()) {
@@ -518,6 +531,8 @@ export async function handleBooboo(
 			fullReport.push(fullSection);
 		}
 	}
+	const typeCoverageCount = summaryItems.find(s => s.category === "Untyped")?.count ?? 0;
+	ctx.ui.notify(`✓ Part 7: Type coverage (${typeCoverageCount} untyped)`, "info");
 
 	// Part 8: Circular deps
 	if (!pi.getFlag("no-madge") && clients.depChecker.isAvailable()) {
@@ -536,6 +551,8 @@ export async function handleBooboo(
 			fullReport.push(`${fullSection}\n`);
 		}
 	}
+	const circularCount = summaryItems.find(s => s.category === "Circular Deps")?.count ?? 0;
+	ctx.ui.notify(`✓ Part 8: Circular deps (${circularCount} chains)`, "info");
 
 	// Part 9: Arch rules
 	if (!clients.architect.hasConfig()) {
@@ -580,6 +597,8 @@ export async function handleBooboo(
 			fullReport.push(`${fullSection}\n`);
 		}
 	}
+	const archCount = summaryItems.find(s => s.category === "Architectural")?.count ?? 0;
+	ctx.ui.notify(`✓ Part 9: Arch rules (${archCount} violations)`, "info");
 
 	// --- Create structured JSON report (for AI processing) ---
 	nodeFs.mkdirSync(reviewDir, { recursive: true });
@@ -662,6 +681,7 @@ ${fullReport.join("\n")}`;
 			`📊 Code Review: ${totalIssues} issues`,
 			`  🔧 ${fixableCount} fixable | 🏗️ ${refactorNeeded} refactor`,
 			`📄 JSON: ${jsonPath}`,
+			`📄 MD: ${mdPath}`,
 			`🚀 Run \`/lens-booboo-fix\` to auto-fix`,
 			`🚫 Mark false positive: \`/lens-booboo-fix --false-positive "<category>:<file>"\``,
 		];
