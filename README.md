@@ -85,6 +85,37 @@ pi --no-autoformat    # Skip automatic formatting
 
 ---
 
+### Auto-Linting (Default Enabled)
+
+pi-lens **automatically lints** every file you write or edit. Linters are auto-detected based on your project configuration.
+
+| Linter | Languages | Installation | Role | Priority |
+|--------|-----------|--------------|------|----------|
+| **Biome** ⭐ | TS/JS/JSON/CSS | ✅ Automatic | **Default** | 10 |
+| **Ruff** ⭐ | Python | ✅ Automatic | **Default** | 10 |
+| **oxlint** | TS/JS | Manual (`npm i -g oxlint`) | Fast alternative | 12 |
+| **ESLint** | JS/Vue/Svelte | `npx` via `--lens-lsp` | LSP only | - |
+| **shellcheck** | Bash/sh/zsh/fish | Manual (`apt install shellcheck`) | Shell scripts | 20 |
+
+⭐ = Auto-installed (no manual setup required)
+
+**Priority:** Lower numbers = run earlier. Biome/Ruff run first, followed by specialized linters.
+
+**How it works:**
+1. Agent writes a file
+2. pi-lens detects linters based on config files and file type
+3. Biome takes priority for TS/JS; Ruff takes priority for Python
+4. Multiple linters can run on the same file (e.g., Biome + oxlint)
+5. Issues are delta-tracked (only new issues shown after first write)
+
+**Notes:**
+- Biome and Ruff are **dual-purpose** (lint + format)
+- oxlint is a faster Rust-based alternative to ESLint
+- ESLint only runs when `--lens-lsp` is enabled
+- shellcheck requires manual installation on most systems
+
+---
+
 ### LSP Support (NEW) — 31 Language Servers
 
 Enable full Language Server Protocol support with `--lens-lsp`:
