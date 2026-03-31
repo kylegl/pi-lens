@@ -11,6 +11,19 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { safeSpawn } from "./safe-spawn.js";
 
+/**
+ * Escape an argument for Windows shell execution.
+ * Handles spaces, quotes, and special characters.
+ * Mirrors the implementation in safe-spawn.ts
+ */
+function escapeWindowsArg(arg: string): string {
+	// If no special characters, return as-is
+	if (!/[\s\"]/.test(arg)) return arg;
+
+	// Escape quotes by doubling them
+	return `"${arg.replace(/"/g, "\"\"")}"`;
+}
+
 export interface SgMatch {
 	file: string;
 	range: {
@@ -51,9 +64,10 @@ export class SgRunner {
 	async exec(args: string[]): Promise<SgResult> {
 		return new Promise((resolve) => {
 			// On Windows, construct full command string to avoid deprecation warning
+			// Use proper Windows escaping (same as safe-spawn.ts)
 			const useShell = process.platform === "win32";
 			const fullCommand = useShell
-				? `npx sg ${args.map((a) => (a.includes(" ") ? `"${a}"` : a)).join(" ")}`
+				? `npx sg ${args.map(escapeWindowsArg).join(" ")}`
 				: undefined;
 
 			const proc = fullCommand
