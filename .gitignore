@@ -54,6 +54,7 @@ jscpd-report.json
 !CHANGELOG.md
 !AST_GREP_RULES.md
 !featurestoadd.md
+!OPENCODE_GAP_ANALYSIS.md
 !skills/**/*.md
 
 # docs folder entirely

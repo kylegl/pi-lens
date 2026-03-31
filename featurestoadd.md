@@ -439,18 +439,211 @@ const eslintRunner: RunnerDefinition = {
 
 ---
 
-## Implementation Order Recommendation
+## OpenCode Gap Analysis (Unique Features to Consider)
 
-1. **Symbol extraction** - Enhances existing tree-sitter infrastructure
-2. **Vue support** - Common frontend framework, high user demand
-3. **Hadolint** - Dockerfile linting for containerized projects
-4. **Stylelint** - CSS/SCSS projects that don't use Tailwind
+### Commands OpenCode Has That pi-lens Could Add
+
+#### 1. `/lens-rmslop` - Remove AI Slop ⭐ HIGH PRIORITY
+**Status:** Already in roadmap
+
+**What it does:**
+- Check diff against base branch
+- Remove AI-generated slop:
+  - Extra comments a human wouldn't add
+  - Defensive checks/try-catch in trusted codepaths
+  - Casts to `any` to bypass type issues
+  - Style inconsistent with rest of file
+  - Unnecessary emoji usage
+- Report 1-3 sentence summary
+
+**Implementation:** Already documented in lens-rmslop section above.
+
+---
+
+#### 2. `/lens-learn` - Extract Learnings to AGENTS.md ⭐ MEDIUM PRIORITY
+**Status:** Not implemented
+
+**What it does:**
+- Analyze session for non-obvious discoveries
+- Extract learnings automatically
+- Write to appropriate AGENTS.md level:
+  - Project-wide → root AGENTS.md
+  - Package-specific → packages/foo/AGENTS.md
+  - Feature-specific → src/auth/AGENTS.md
+
+**What counts as learning:**
+- Hidden relationships between files
+- Non-obvious execution paths
+- API/tool quirks and workarounds
+- Build/test commands not in README
+- Architectural constraints
+- Files that must change together
+
+**Implementation sketch:**
+```typescript
+// commands/learn.ts
+export async function learnCommand(ctx: ExtensionContext) {
+  // 1. Get session history from pi
+  // 2. Analyze for discoveries, errors, fixes
+  // 3. Find relevant AGENTS.md location
+  // 4. Extract 1-3 line insights
+  // 5. Append to AGENTS.md with timestamp
+}
+```
+
+---
+
+#### 3. `/lens-spellcheck` - Explicit Spellcheck Command ⭐ LOW PRIORITY
+**Status:** Spellcheck runner exists, but no command
+
+**What it does:**
+- Spellcheck all markdown file changes
+- Focus on unstaged/staged changes
+- Report typos found
+
+**Note:** pi-lens already runs spellcheck automatically on .md files in the dispatch pipeline. A separate command might be redundant.
+
+---
+
+### LSP Gaps vs OpenCode (35 languages)
+
+**Critical Missing (Web Development):**
+| Language | OpenCode | pi-lens | Priority |
+|----------|----------|---------|----------|
+| **Vue** | ✅ vue-language-server | ❌ | ⭐ HIGH |
+| **Svelte** | ✅ svelte-language-server | ❌ | ⭐ HIGH |
+| **Astro** | ✅ astro-language-server | ❌ | ⭐ MEDIUM |
+| **CSS** | ✅ css-language-server | ❌ | ⭐ HIGH |
+| **Prisma** | ✅ prisma LSP | ❌ | ⭐ MEDIUM |
+| **YAML** | ✅ yaml-ls (full) | ⚠️ interactive | ⭐ MEDIUM |
+
+**Missing (Backend/Mobile):**
+| Language | OpenCode | pi-lens | Priority |
+|----------|----------|---------|----------|
+| **Go** | ✅ gopls | ❌ (has go-vet) | ⭐ MEDIUM |
+| **Rust** | ✅ rust-analyzer | ❌ (has clippy) | ⭐ MEDIUM |
+| **C#** | ✅ csharp-ls | ❌ | ⭐ MEDIUM |
+| **Java** | ✅ jdtls | ❌ | ⭐ MEDIUM |
+| **Swift** | ✅ sourcekit-lsp | ❌ | ⭐ LOW |
+| **PHP** | ✅ intelephense | ❌ | ⭐ LOW |
+
+**Niche (Low Priority):**
+- Kotlin, Lua, Zig, Elixir, OCaml, Dart, R, Gleam, Clojure, Julia, Haskell, D, Nix
+
+---
+
+### Formatters: pi-lens is Comprehensive ✅
+
+**Comparison:**
+- OpenCode: 28 formatters (includes niche: D, R, Haskell, Gleam, Clojure)
+- pi-lens: 15 formatters (covers all mainstream languages)
+
+**Verdict:** No action needed. pi-lens formatters are sufficient.
+
+---
+
+### What pi-lens Has That OpenCode Lacks (Differentiators)
+
+**These are pi-lens strengths:**
+
+1. **`/lens-booboo`** - Comprehensive code review (OpenCode has no equivalent)
+   - Design smells
+   - Complexity metrics
+   - Dead code detection
+   - Duplicate detection
+   - Type coverage analysis
+   - Circular dependency detection
+   - 20+ runners in parallel
+
+2. **Tree-sitter Structural Analysis**
+   - Similar function detection
+   - Config validation (env var typos)
+   - Semantic slop detection
+
+3. **Delta Mode** - Shows only NEW issues (baseline tracking)
+   - Reduces noise significantly
+   - Tracks technical debt over time
+
+4. **Config Validation** - Detects config/env typos
+   - Real-time validation of config access
+
+---
+
+### /lens-booboo Enhancement Ideas (Inspired by OpenCode)
+
+While OpenCode doesn't have a booboo equivalent, we could enhance ours:
+
+#### 1. AI-Powered Analysis Layer
+After runners complete, send aggregated results to AI for higher-level insights:
+- "These 3 similar functions could be consolidated"
+- "This complexity spike correlates with recent changes"
+- "Consider extracting this pattern into a utility"
+
+#### 2. Slop Score
+Quantify "AI slop" in codebase:
+- Calculate slop score (0-100)
+- Track trend over time
+- Alert when slop increases
+
+#### 3. Trend Analysis
+Compare with previous booboo reports:
+- Issues increasing/decreasing
+- Technical debt velocity
+- Quality trend graphs
+
+#### 4. Actionable Summary (OpenCode Style)
+- 1-3 sentence executive summary
+- Prioritized action items
+- Quick wins vs deep refactoring
+
+---
+
+## Updated Implementation Priority
+
+### Immediate (Next 2-4 weeks):
+1. **Vue LSP** - High user demand
+2. **Svelte LSP** - Growing framework
+3. **CSS LSP** - CSS IntelliSense
+
+### Short-term (1-2 months):
+4. **Symbol extraction** - Tree-sitter enhancement
+5. **Call graph analysis** - Better dead code detection
+6. **Prisma LSP** - Modern stack
+7. **/lens-rmslop** - Remove AI slop
+
+### Medium-term (2-4 months):
+8. **Go gopls** - Better than go-vet
+9. **Rust rust-analyzer** - Better than clippy
+10. **/lens-learn** - Extract learnings
+11. **stylelint** - CSS linting
+12. **hadolint** - Dockerfile linting
+
+### Long-term (When needed):
+13. Remaining LSPs (C#, Java, Swift, PHP, etc.)
+14. /lens-spellcheck command (if requested)
+15. AI-powered booboo analysis layer
 
 ---
 
 ## Notes
 
-- **LSP approach**: pi-lens already has ts-lsp runner using LSP. Could extend to other languages.
+- **LSP approach**: pi-lens already has ts-lsp runner pattern. Can replicate for other languages.
 - **CLI approach**: Most linters have CLI output that can be parsed (like ruff, biome).
-- **Auto-install**: OpenCode auto-installs some LSPs (gopls, vscode-eslint). pi-lens could do similar.
+- **Auto-install**: OpenCode auto-installs some LSPs. pi-lens could do similar for critical ones (Vue, Svelte, CSS).
 - **Priority levels**: Lower = runs earlier. Blockers should be < 10, warnings 10-50.
+
+### Key Insight from OpenCode Comparison:
+
+**pi-lens is STRONG in:**
+- ✅ Comprehensive linting/formatting (mainstream languages)
+- ✅ Unique code review (`/lens-booboo`)
+- ✅ Tree-sitter structural analysis
+- ✅ Delta mode (baseline tracking)
+
+**pi-lens could IMPROVE:**
+- ⚠️ Vue/Svelte/CSS LSP support (critical web dev gaps)
+- ⚠️ Go/Rust LSP (better than current tools)
+- ⚠️ `/lens-rmslop` command (in roadmap)
+- ⚠️ `/lens-learn` command (new idea from OpenCode)
+
+**Conclusion:** Focus on LSP gaps for Vue/Svelte/CSS first - these are the biggest user-facing gaps compared to OpenCode.
