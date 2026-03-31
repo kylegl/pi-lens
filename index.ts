@@ -267,6 +267,12 @@ export default function (pi: ExtensionAPI) {
 		default: false,
 	});
 
+	pi.registerFlag("auto-install", {
+		description: "Auto-install missing LSP servers without prompting (for Go, Rust, YAML, JSON, Bash)",
+		type: "boolean",
+		default: false,
+	});
+
 	// --- Commands ---
 
 	pi.registerCommand("lens-booboo", {

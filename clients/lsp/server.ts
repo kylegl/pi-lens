@@ -10,6 +10,7 @@
 import path from "path";
 import { launchLSP, launchViaPackageManager, launchViaNode, type LSPProcess } from "./launch.js";
 import { ensureTool, getToolPath, getToolEnvironment } from "../installer/index.js";
+import { promptForInstall, supportsInteractiveInstall } from "./interactive-install.js";
 
 // --- Types ---
 
@@ -31,6 +32,46 @@ import { dirname } from "path";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+
+// --- Interactive Install Helper ---
+
+/**
+ * Spawn LSP with interactive install support for common languages
+ * 
+ * For Go, Rust, YAML, JSON, Bash: prompts user to install if tool not found
+ * Other languages: throws error with install instructions
+ */
+async function spawnWithInteractiveInstall(
+	language: string,
+	command: string,
+	args: string[],
+	options: { cwd: string },
+	spawnFn: () => LSPProcess
+): Promise<LSPProcess | undefined> {
+	try {
+		return spawnFn();
+	} catch (error) {
+		// Check if this is a "command not found" error
+		const errorMsg = String(error);
+		if (!errorMsg.includes("not found") && !errorMsg.includes("ENOENT")) {
+			throw error; // Re-throw if it's a different error
+		}
+
+		// Check if language supports interactive install
+		if (supportsInteractiveInstall(language)) {
+			const shouldInstall = await promptForInstall(language, options.cwd);
+			if (shouldInstall) {
+				// Try again after install
+				return spawnFn();
+			}
+			// User declined, return undefined to skip this LSP
+			return undefined;
+		}
+
+		// For other languages, throw with install instructions
+		throw error;
+	}
+}
 
 /**
  * Walk up the tree looking for project root markers
@@ -203,8 +244,14 @@ export const GoServer: LSPServerInfo = {
 	extensions: [".go"],
 	root: createRootDetector(["go.mod", "go.sum"], [".pi-lens"]),
 	async spawn(root) {
-		const proc = launchLSP("gopls", [], { cwd: root });
-		return { process: proc };
+		const proc = await spawnWithInteractiveInstall(
+			"go",
+			"gopls",
+			[],
+			{ cwd: root },
+			() => launchLSP("gopls", [], { cwd: root })
+		);
+		return proc ? { process: proc } : undefined;
 	},
 };
 
@@ -214,8 +261,14 @@ export const RustServer: LSPServerInfo = {
 	extensions: [".rs"],
 	root: createRootDetector(["Cargo.toml", "Cargo.lock"], [".pi-lens"]),
 	async spawn(root) {
-		const proc = launchLSP("rust-analyzer", [], { cwd: root });
-		return { process: proc };
+		const proc = await spawnWithInteractiveInstall(
+			"rust",
+			"rust-analyzer",
+			[],
+			{ cwd: root },
+			() => launchLSP("rust-analyzer", [], { cwd: root })
+		);
+		return proc ? { process: proc } : undefined;
 	},
 };
 
@@ -436,9 +489,15 @@ export const BashServer: LSPServerInfo = {
 	extensions: [".sh", ".bash", ".zsh"],
 	root: async () => process.cwd(),
 	async spawn() {
-		// Manual install required: npm install -g bash-language-server
-		const proc = launchLSP("bash-language-server", ["start"], {});
-		return { process: proc };
+		const cwd = process.cwd();
+		const proc = await spawnWithInteractiveInstall(
+			"bash",
+			"bash-language-server",
+			["start"],
+			{ cwd },
+			() => launchLSP("bash-language-server", ["start"], {})
+		);
+		return proc ? { process: proc } : undefined;
 	},
 };
 
@@ -460,9 +519,15 @@ export const YamlServer: LSPServerInfo = {
 	extensions: [".yaml", ".yml"],
 	root: async () => process.cwd(),
 	async spawn() {
-		// Manual install required: npm install -g yaml-language-server
-		const proc = launchLSP("yaml-language-server", ["--stdio"], {});
-		return { process: proc };
+		const cwd = process.cwd();
+		const proc = await spawnWithInteractiveInstall(
+			"yaml",
+			"yaml-language-server",
+			["--stdio"],
+			{ cwd },
+			() => launchLSP("yaml-language-server", ["--stdio"], {})
+		);
+		return proc ? { process: proc } : undefined;
 	},
 };
 
@@ -472,9 +537,15 @@ export const JsonServer: LSPServerInfo = {
 	extensions: [".json", ".jsonc"],
 	root: async () => process.cwd(),
 	async spawn() {
-		// Manual install required: npm install -g vscode-langservers-extracted
-		const proc = launchLSP("vscode-json-languageserver", ["--stdio"], {});
-		return { process: proc };
+		const cwd = process.cwd();
+		const proc = await spawnWithInteractiveInstall(
+			"json",
+			"vscode-json-languageserver",
+			["--stdio"],
+			{ cwd },
+			() => launchLSP("vscode-json-languageserver", ["--stdio"], {})
+		);
+		return proc ? { process: proc } : undefined;
 	},
 };
 
