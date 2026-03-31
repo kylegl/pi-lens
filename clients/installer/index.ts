@@ -1,28 +1,27 @@
 /**
  * Auto-Installation System for pi-lens
  * 
- * Automatically installs required tools when they're not found.
- * Covers 12/31 LSP servers (npm/pip installable) plus linting tools.
+ * Minimal auto-install: Only TypeScript and Python ecosystems.
+ * Other tools require manual installation with clear instructions.
  * 
- * Core LSP (5):
- * - typescript-language-server (TypeScript)
- * - pyright (Python)
- * - yaml-language-server (YAML)
- * - vscode-json-languageserver (JSON)
- * - bash-language-server (Bash)
- * 
- * Web Framework LSP (2):
- * - svelte-language-server (Svelte)
- * - vscode-eslint-language-server (ESLint)
- * - vscode-css-languageserver (CSS/SCSS/Sass/Less)
- * 
- * Database/ORM LSP (1):
- * - @prisma/language-server (Prisma)
- * 
- * Linting/Structural (3):
+ * Auto-install (4 tools):
+ * - typescript-language-server (TypeScript LSP)
+ * - pyright (Python LSP)
  * - ruff (Python linting)
- * - @biomejs/biome (JS/TS/JSON linting)
- * - @ast-grep/cli (structural search)
+ * - @biomejs/biome (JS/TS/JSON linting/formatting)
+ * 
+ * Manual install required (25+ tools):
+ * - yaml-language-server: npm install -g yaml-language-server
+ * - vscode-json-languageserver: npm install -g vscode-langservers-extracted
+ * - bash-language-server: npm install -g bash-language-server
+ * - svelte-language-server: npm install -g svelte-language-server
+ * - vscode-eslint-language-server: npm install -g vscode-langservers-extracted
+ * - vscode-css-languageserver: npm install -g vscode-langservers-extracted
+ * - @prisma/language-server: npm install -g @prisma/language-server
+ * - @ast-grep/cli: npm install -g @ast-grep/cli
+ * - dockerfile-language-server: npm install -g dockerfile-language-server-nodejs
+ * - @vue/language-server: npm install -g @vue/language-server
+ * - And all language-specific servers (gopls, rust-analyzer, etc.)
  * 
  * Strategies:
  * - npm packages via npx/bun
@@ -89,91 +88,6 @@ const TOOLS: ToolDefinition[] = [
 		installStrategy: "npm",
 		packageName: "@biomejs/biome",
 		binaryName: "biome",
-	},
-	{
-		id: "ast-grep",
-		name: "ast-grep",
-		checkCommand: "ast-grep",
-		checkArgs: ["--version"],
-		installStrategy: "npm",
-		packageName: "@ast-grep/cli",
-		binaryName: "sg",
-	},
-	// Config/Data LSP servers
-	{
-		id: "yaml-language-server",
-		name: "YAML Language Server",
-		checkCommand: "yaml-language-server",
-		checkArgs: ["--version"],
-		installStrategy: "npm",
-		packageName: "yaml-language-server",
-		binaryName: "yaml-language-server",
-	},
-	{
-		id: "vscode-json-languageserver",
-		name: "JSON Language Server",
-		checkCommand: "vscode-json-languageserver",
-		checkArgs: ["--version"],
-		installStrategy: "npm",
-		packageName: "vscode-langservers-extracted",
-		binaryName: "vscode-json-languageserver",
-	},
-	// Shell/DevOps LSP servers
-	{
-		id: "bash-language-server",
-		name: "Bash Language Server",
-		checkCommand: "bash-language-server",
-		checkArgs: ["--version"],
-		installStrategy: "npm",
-		packageName: "bash-language-server",
-		binaryName: "bash-language-server",
-	},
-	// Web framework LSP servers
-	{
-		id: "svelte-language-server",
-		name: "Svelte Language Server",
-		checkCommand: "svelteserver",
-		checkArgs: ["--version"],
-		installStrategy: "npm",
-		packageName: "svelte-language-server",
-		binaryName: "svelteserver",
-	},
-	{
-		id: "svelte-language-server",
-		name: "Svelte Language Server",
-		checkCommand: "svelteserver",
-		checkArgs: ["--version"],
-		installStrategy: "npm",
-		packageName: "svelte-language-server",
-		binaryName: "svelteserver",
-	},
-	{
-		id: "eslint-server",
-		name: "ESLint Language Server",
-		checkCommand: "vscode-eslint-language-server",
-		checkArgs: ["--version"],
-		installStrategy: "npm",
-		packageName: "vscode-langservers-extracted",
-		binaryName: "vscode-eslint-language-server",
-	},
-	{
-		id: "css-language-server",
-		name: "CSS Language Server",
-		checkCommand: "vscode-css-languageserver",
-		checkArgs: ["--version"],
-		installStrategy: "npm",
-		packageName: "vscode-langservers-extracted",
-		binaryName: "vscode-css-languageserver",
-	},
-	// Database/ORM LSP servers
-	{
-		id: "prisma-language-server",
-		name: "Prisma Language Server",
-		checkCommand: "prisma-language-server",
-		checkArgs: ["--version"],
-		installStrategy: "npm",
-		packageName: "@prisma/language-server",
-		binaryName: "prisma-language-server",
 	},
 ];
 

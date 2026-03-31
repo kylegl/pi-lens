@@ -436,7 +436,8 @@ export const BashServer: LSPServerInfo = {
 	extensions: [".sh", ".bash", ".zsh"],
 	root: async () => process.cwd(),
 	async spawn() {
-		const proc = launchViaPackageManager("bash-language-server", ["start"], {});
+		// Manual install required: npm install -g bash-language-server
+		const proc = launchLSP("bash-language-server", ["start"], {});
 		return { process: proc };
 	},
 };
@@ -459,7 +460,8 @@ export const YamlServer: LSPServerInfo = {
 	extensions: [".yaml", ".yml"],
 	root: async () => process.cwd(),
 	async spawn() {
-		const proc = launchViaPackageManager("yaml-language-server", ["--stdio"], {});
+		// Manual install required: npm install -g yaml-language-server
+		const proc = launchLSP("yaml-language-server", ["--stdio"], {});
 		return { process: proc };
 	},
 };
@@ -470,7 +472,8 @@ export const JsonServer: LSPServerInfo = {
 	extensions: [".json", ".jsonc"],
 	root: async () => process.cwd(),
 	async spawn() {
-		const proc = launchViaPackageManager("vscode-json-languageserver", ["--stdio"], {});
+		// Manual install required: npm install -g vscode-langservers-extracted
+		const proc = launchLSP("vscode-json-languageserver", ["--stdio"], {});
 		return { process: proc };
 	},
 };
@@ -481,7 +484,8 @@ export const PrismaServer: LSPServerInfo = {
 	extensions: [".prisma"],
 	root: createRootDetector(["prisma/schema.prisma"], [".pi-lens"]),
 	async spawn(root) {
-		const proc = launchViaPackageManager("@prisma/language-server", ["--stdio"], { cwd: root });
+		// Manual install required: npm install -g @prisma/language-server
+		const proc = launchLSP("prisma-language-server", ["--stdio"], { cwd: root });
 		return { process: proc };
 	},
 };
@@ -506,7 +510,8 @@ export const SvelteServer: LSPServerInfo = {
 	extensions: [".svelte"],
 	root: createRootDetector(["package-lock.json", "bun.lockb", "bun.lock", "pnpm-lock.yaml", "yarn.lock"], [".pi-lens"]),
 	async spawn(root) {
-		const proc = launchViaPackageManager("svelte-language-server", ["--stdio"], { cwd: root });
+		// Manual install required: npm install -g svelte-language-server
+		const proc = launchLSP("svelteserver", ["--stdio"], { cwd: root });
 		return { process: proc };
 	},
 };
@@ -524,7 +529,8 @@ export const ESLintServer: LSPServerInfo = {
 		"package.json",
 	]),
 	async spawn(root) {
-		const proc = launchViaPackageManager("vscode-eslint", ["--stdio"], { cwd: root });
+		// Manual install required: npm install -g vscode-langservers-extracted
+		const proc = launchLSP("vscode-eslint-language-server", ["--stdio"], { cwd: root });
 		return { process: proc };
 	},
 };
@@ -535,7 +541,8 @@ export const CssServer: LSPServerInfo = {
 	extensions: [".css", ".scss", ".sass", ".less"],
 	root: async () => process.cwd(),
 	async spawn() {
-		const proc = launchViaPackageManager("vscode-css-languageserver", ["--stdio"], {});
+		// Manual install required: npm install -g vscode-langservers-extracted
+		const proc = launchLSP("vscode-css-languageserver", ["--stdio"], {});
 		return { process: proc };
 	},
 };
