@@ -1063,6 +1063,7 @@ export default function (pi: ExtensionAPI) {
 
 		// --- Auto-format on write (default enabled) ---
 		// Runs detected formatters concurrently via Effect-TS
+		let formatChanged = false;
 		if (!pi.getFlag("no-autoformat") && fileContent) {
 			const formatService = getFormatService();
 			try {
@@ -1071,6 +1072,7 @@ export default function (pi: ExtensionAPI) {
 				formatService.recordRead(filePath);
 				const result = await formatService.formatFile(filePath);
 				if (result.anyChanged) {
+					formatChanged = true;
 					dbg(`autoformat: ${result.formatters.map(f => `${f.name}(${f.changed ? "changed" : "unchanged"})`).join(", ")}`);
 					// Re-read content after formatting for downstream processing
 					fileContent = nodeFs.readFileSync(filePath, "utf-8");
@@ -1183,6 +1185,12 @@ export default function (pi: ExtensionAPI) {
 		// Report autofix results
 		if (fixedCount > 0) {
 			lspOutput += `\n\n✅ Auto-fixed ${fixedCount} issue(s) in ${path.basename(filePath)}`;
+		}
+
+		// Warn agent if file was modified by auto-format or auto-fix
+		// This ensures they know to re-read before next edit
+		if (formatChanged || fixedCount > 0) {
+			lspOutput += `\n\n⚠️ **File modified by auto-format/fix. Re-read before next edit.**`;
 		}
 
 		// --- Test runner: run corresponding tests on write ---
