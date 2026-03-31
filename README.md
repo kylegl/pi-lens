@@ -204,6 +204,7 @@ pi-lens uses a **dispatcher-runner architecture** for extensible multi-language 
 | **biome** | TS/JS | 10 | Warning | Linting issues (delta-tracked) |
 | **ruff** | Python | 10 | Warning | Python linting (delta-tracked) |
 | **oxlint** | TS/JS | 12 | Warning | Fast Rust-based JS/TS linter |
+| **tree-sitter** | TS/JS, Python | 14 | Mixed | AST-based structural analysis (17 patterns) |
 | **ast-grep-napi** | TS/JS | 15 | Warning | **100x faster** structural analysis |
 | **type-safety** | TS | 20 | Mixed | Switch exhaustiveness (blocking), other (warning) |
 | **shellcheck** | Shell | 20 | Warning | Bash/sh/zsh/fish linting |
@@ -233,24 +234,46 @@ pi-lens uses a **dispatcher-runner architecture** for extensible multi-language 
 
 ### Structural Patterns (Tree-sitter)
 
-Tree-sitter performs **fast AST-based analysis** as a **post-write check** (Phase 5 in execution flow). It runs after dispatch runners complete, catching patterns that are difficult for other tools to detect.
+Tree-sitter performs **fast AST-based pattern matching** using the `tree-sitter` runner (priority 14). It executes all query files from `rules/tree-sitter-queries/` for comprehensive structural analysis.
 
-#### TypeScript/JavaScript Patterns (Post-Write Only)
+#### TypeScript/JavaScript Patterns
 
 | Pattern | Severity | What it finds |
 |---------|----------|---------------|
-| **Deep promise chain** | 🟡 Warning | `.then().catch().then()` — 3+ levels, consider async/await |
+| **Empty catch** | 🔴 Error | `catch (err) {}` — swallowing errors silently |
+| **Debugger** | 🟡 Warning | `debugger;` — debug leftover |
+| **Await in loop** | 🟡 Warning | `for (...) { await ... }` — sequential execution |
+| **Hardcoded secrets** | 🔴 Error | `const api_key = "..."` — security risk |
+| **Eval** | 🔴 Error | `eval(userInput)` — code injection |
+| **Console statement** | 🟡 Warning | `console.log` — debug leftover |
+| **Long parameter list** | 🟡 Warning | 6+ parameters — use object pattern |
+| **Nested ternary** | 🟡 Warning | `a ? b ? c : d : e` — unreadable code |
+| **Deep promise chain** | 🟡 Warning | `.then().catch().then()` — 3+ levels, use async/await |
 | **Mixed async styles** | 🟡 Warning | `await` + `.then()` in same function — be consistent |
 | **Deep nesting** | 🟡 Warning | `if { if { if { } } }` — 3+ levels, extract functions |
 
-**Note:** Other structural patterns (empty catch, debugger, hardcoded secrets, etc.) are handled by [ast-grep runners](#runners) (ast-grep-napi), which run during the dispatch phase.
+#### Python Patterns
+
+| Pattern | Severity | What it finds |
+|---------|----------|---------------|
+| **Bare except** | 🔴 Error | `except:` — catches SystemExit/KeyboardInterrupt |
+| **Mutable default arg** | 🔴 Error | `def f(x=[])` — shared mutable state |
+| **Wildcard import** | 🟡 Warning | `from module import *` — namespace pollution |
+| **Eval/exec** | 🔴 Error | `eval(user_input)` — code injection |
+| **Is vs equals** | 🟡 Warning | `is "literal"` should be `==` |
+| **Unreachable except** | 🔴 Error | Specific except after bare except (unreachable) |
 
 **Why tree-sitter is separate:**
-- **Speed:** 50ms for targeted pattern matching
-- **AST precision:** Catches structural patterns regex can't handle
-- **Post-write timing:** Runs after type-checking, catches style issues
+- **Speed:** 50-100ms for comprehensive pattern matching
+- **AST precision:** Catches structural patterns regex can't handle  
+- **Multi-language:** Native TypeScript, TSX, and Python support
+- **YAML queries:** Easy to add new patterns without code changes
 
-**Status:** Shows inline in tool results (non-blocking warnings). Also included in `/lens-booboo` reports.
+**Status:** 
+- 🔴 **Error** severity = **blocking** (shown inline, agent must fix)
+- 🟡 **Warning** severity = **non-blocking** (shown in `/lens-booboo`)
+
+**Custom queries:** Add `.yml` files to `.pi-lens/rules/tree-sitter-queries/{typescript,python}/`
 
 #### Custom ast-grep Rules
 

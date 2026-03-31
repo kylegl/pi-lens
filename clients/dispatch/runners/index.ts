@@ -19,6 +19,8 @@ import shellcheckRunner from "./shellcheck.js";
 // Import similarity runner
 import similarityRunner from "./similarity.js";
 import spellcheckRunner from "./spellcheck.js";
+// Import tree-sitter runner
+import treeSitterRunner from "./tree-sitter.js";
 import tsLspRunner from "./ts-lsp.js";
 import tsSlopRunner from "./ts-slop.js";
 import typeSafetyRunner from "./type-safety.js";
@@ -30,6 +32,7 @@ registerRunner(configValidationRunner); // Config/env validation (priority 8)
 registerRunner(astGrepNapiRunner); // TS/JS structural analysis via NAPI (priority 15)
 registerRunner(biomeRunner); // Biome formatting/linting (priority 10)
 registerRunner(oxlintRunner); // Oxlint fast JS/TS linter (priority 12)
+registerRunner(treeSitterRunner); // Tree-sitter structural analysis (priority 14)
 registerRunner(ruffRunner); // Python linting (priority 10)
 registerRunner(tsSlopRunner); // DISABLED - TypeScript slop via CLI (disabled, use NAPI)
 registerRunner(pythonSlopRunner); // Python slop via CLI (priority 25)
