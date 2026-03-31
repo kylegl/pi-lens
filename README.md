@@ -53,18 +53,18 @@ pi install git:github.com/apmantza/pi-lens
 
 pi-lens **automatically formats** every file you write or edit. Formatters are auto-detected based on your project configuration:
 
-| Formatter | Languages | Detection |
-|-----------|-----------|-----------|
-| **Biome** | TS/JS/JSON/CSS | `biome.json` or `@biomejs/biome` in devDependencies |
-| **Prettier** | TS/JS/JSON/CSS/Markdown | `.prettierrc` or `prettier` in devDependencies |
-| **Ruff** | Python | `[tool.ruff]` in `pyproject.toml` |
-| **Black** | Python | `[tool.black]` in `pyproject.toml` |
-| **gofmt** | Go | `go` binary available |
-| **rustfmt** | Rust | `rustfmt` binary available |
-| **zig fmt** | Zig | `zig` binary available |
-| **dart format** | Dart | `dart` binary available |
-| **shfmt** | Shell | `shfmt` binary available |
-| **mix format** | Elixir | `mix` binary available |
+| Formatter | Languages | Detection | Installation |
+|-----------|-----------|-----------|--------------|
+| **Biome** | TS/JS/JSON/CSS | `biome.json` or `@biomejs/biome` in devDependencies | ✅ Automatic |
+| **Prettier** | TS/JS/JSON/CSS/Markdown | `.prettierrc` or `prettier` in devDependencies | Manual (`npm install -g prettier`) |
+| **Ruff** | Python | `[tool.ruff]` in `pyproject.toml` | ✅ Automatic |
+| **Black** | Python | `[tool.black]` in `pyproject.toml` | Manual (`pip install black`) |
+| **gofmt** | Go | `go` binary available | Manual (included with Go SDK) |
+| **rustfmt** | Rust | `rustfmt` binary available | Manual (included with Rust toolchain) |
+| **zig fmt** | Zig | `zig` binary available | Manual (included with Zig SDK) |
+| **dart format** | Dart | `dart` binary available | Manual (included with Dart SDK) |
+| **shfmt** | Shell | `shfmt` binary available | Manual (download binary) |
+| **mix format** | Elixir | `mix` binary available | Manual (included with Elixir) |
 
 **How it works:**
 1. Agent writes a file
