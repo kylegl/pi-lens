@@ -51,6 +51,7 @@ import {
 } from "./clients/bus/index.js";
 import { dispatchLintWithEffect } from "./clients/services/effect-integration.js";
 import { getLSPService, resetLSPService } from "./clients/lsp/index.js";
+import { getFormatService, resetFormatService } from "./clients/format-service.js";
 
 /** Parse a diff to extract modified line ranges in the new file.
  * Handles pi's custom diff format:
@@ -181,6 +182,12 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerFlag("no-madge", {
 		description: "Disable circular dependency checking via madge",
+		type: "boolean",
+		default: false,
+	});
+
+	pi.registerFlag("no-autoformat", {
+		description: "Disable automatic formatting on file write (formatters run by default)",
 		type: "boolean",
 		default: false,
 	});
@@ -1020,6 +1027,22 @@ export default function (pi: ExtensionAPI) {
 			void err;
 		}
 
+		// --- Auto-format on write (default enabled) ---
+		// Runs detected formatters concurrently via Effect-TS
+		if (!pi.getFlag("no-autoformat") && fileContent) {
+			const formatService = getFormatService();
+			try {
+				const result = await formatService.formatFile(filePath);
+				if (result.anyChanged) {
+					dbg(`autoformat: ${result.formatters.map(f => `${f.name}(${f.changed ? "changed" : "unchanged"})`).join(", ")}`);
+					// Re-read content after formatting for downstream processing
+					fileContent = nodeFs.readFileSync(filePath, "utf-8");
+				}
+			} catch (err) {
+				dbg(`autoformat error: ${err}`);
+			}
+		}
+
 		// --- Publish file modified event to bus (Phase 1) ---
 		if (pi.getFlag("lens-bus")) {
 			FileModified.publish({
@@ -1388,5 +1411,8 @@ export default function (pi: ExtensionAPI) {
 		if (pi.getFlag("lens-lsp") && files.length === 0) {
 			resetLSPService();
 		}
+
+		// --- Format service cleanup ---
+		resetFormatService();
 	});
 }
