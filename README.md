@@ -243,6 +243,40 @@ Python (6 patterns):
 
 **AI Slop Detection:** The `python-slop` runner (priority 25) detects low-quality patterns in Python code (~40 patterns). TypeScript/JavaScript slop detection is integrated into `ast-grep-napi` runner.
 
+---
+
+### Additional Safeguards
+
+Safeguards that run **before** the dispatch system:
+
+#### Secrets Scanning (Pre-flight)
+
+Runs on every file write/edit **before** any other checks. Scans for:
+- Stripe/OpenAI keys (`sk-*`)
+- GitHub tokens (`ghp_*`, `github_pat_*`)
+- AWS keys (`AKIA*`)
+- Slack tokens (`xoxb-*`, `xoxp-*`)
+- Private keys (`BEGIN PRIVATE KEY`)
+- Hardcoded passwords and API keys
+
+**Behavior:** Always blocking, always runs on all file types. Cannot be disabled — security takes precedence.
+
+#### Agent Behavior Warnings
+
+Inline heuristics to catch anti-patterns in real-time:
+
+**Blind Write Detection**
+- **Triggers:** Agent edits a file without reading it in the last 5 tool calls
+- **Warning:** `⚠ BLIND WRITE — editing 'file.ts' without reading in the last 5 tool calls.`
+- **Why:** Prevents edits based on stale assumptions
+
+**Thrashing Detection**
+- **Triggers:** 3+ consecutive identical tool calls within 30 seconds
+- **Warning:** `🔴 THRASHING — 3 consecutive 'edit' calls with no other action.`
+- **Why:** Catches stuck loops where the agent repeats failed actions
+
+**Behavior:** Warnings appear inline but do **not** block execution.
+
 #### Custom ast-grep Rules
 
 Create your own structural rules in `.pi-lens/rules/`:
@@ -481,46 +515,6 @@ The LSP walks up from the edited file's directory until it finds a `tsconfig.jso
 - `strict: true`
 
 The compiler options are refreshed automatically when you switch between projects within a session.
-
----
-
-## Additional Safeguards
-
-Beyond the runner system, pi-lens includes safeguards that run **before** the dispatch system:
-
-### Secrets Scanning (Pre-flight Security)
-
-**Not a runner** — runs on every file write/edit **before** any other checks.
-
-Scans file content for potential secrets using regex patterns:
-- Stripe/OpenAI keys (`sk-*`)
-- GitHub tokens (`ghp_*`, `github_pat_*`)
-- AWS keys (`AKIA*`)
-- Slack tokens (`xoxb-*`, `xoxp-*`)
-- Private keys (`BEGIN PRIVATE KEY`)
-- Hardcoded passwords and API keys
-
-**Behavior:** Always blocking, always runs on all file types. Cannot be disabled or bypassed — security takes precedence over all other checks.
-
-### Agent Behavior Warnings
-
-**Not runners** — these are inline heuristics shown to the agent to catch anti-patterns in real-time.
-
-**Blind Write Detection**
-- **Triggers:** Agent edits a file without reading it in the last 5 tool calls
-- **Warning:** `⚠ BLIND WRITE — editing 'file.ts' without reading in the last 5 tool calls. Read the file first to avoid assumptions.`
-- **Why:** Prevents edits based on stale assumptions or hallucinated file contents
-
-**Thrashing Detection**
-- **Triggers:** 3+ consecutive identical tool calls (e.g., `edit`, `edit`, `edit`) within 30 seconds
-- **Warning:** `🔴 THRASHING — 3 consecutive 'edit' calls with no other action. Consider fixing the root cause instead of re-running.`
-- **Why:** Catches stuck loops where the agent repeats the same failed action
-
-**Edit Count Tracking**
-- Tracks how many times each file has been edited in the current session
-- Used for metrics and detecting "hot" files with churn
-
-**Behavior:** These warnings appear inline with lint results but do **not** block execution. They are guidance for the agent to self-correct.
 
 ---
 
