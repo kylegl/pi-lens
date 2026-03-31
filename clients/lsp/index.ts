@@ -23,6 +23,7 @@ export interface LSPState {
 	clients: Map<string, LSPClientInfo>; // key: "serverId:root"
 	servers: Map<string, LSPServerInfo>;
 	broken: Set<string>; // servers that failed to initialize
+	inFlight: Map<string, Promise<SpawnedServer | undefined>>; // prevent duplicate spawns
 }
 
 export interface SpawnedServer {
@@ -40,11 +41,13 @@ export class LSPService {
 			clients: new Map(),
 			servers: new Map(),
 			broken: new Set(),
+			inFlight: new Map(),
 		};
 	}
 
 	/**
 	 * Get or create LSP client for a file
+	 * Prevents duplicate client creation via in-flight promise tracking
 	 */
 	async getClientForFile(filePath: string): Promise<SpawnedServer | undefined> {
 		const servers = getServersForFileWithConfig(filePath);
@@ -59,7 +62,7 @@ export class LSPService {
 			const normalizedRoot = process.platform === "win32" ? root.toLowerCase() : root;
 			const key = `${server.id}:${normalizedRoot}`;
 
-			// Check cache
+			// Check cache first (fast path)
 			const existing = this.state.clients.get(key);
 			if (existing) {
 				return { client: existing, info: server };
@@ -70,30 +73,56 @@ export class LSPService {
 				continue;
 			}
 
-			// Spawn new client
+			// Check if there's already an in-flight spawn for this key
+			const inFlight = this.state.inFlight.get(key);
+			if (inFlight) {
+				// Wait for the existing spawn to complete
+				const result = await inFlight;
+				if (result) return result;
+				continue; // This server failed, try next
+			}
+
+			// Create the spawn promise and store it
+			const spawnPromise = this.spawnClient(server, root, key);
+			this.state.inFlight.set(key, spawnPromise);
+
 			try {
-				const spawned = await server.spawn(root);
-				if (!spawned) {
-					this.state.broken.add(key);
-					continue;
-				}
-
-				const client = await createLSPClient({
-					serverId: server.id,
-					process: spawned.process,
-					root,
-					initialization: spawned.initialization,
-				});
-
-				this.state.clients.set(key, client);
-				return { client, info: server };
-			} catch (err) {
-				console.error(`[lsp] Failed to spawn ${server.id}:`, err);
-				this.state.broken.add(key);
+				const result = await spawnPromise;
+				if (result) return result;
+			} finally {
+				// Clean up in-flight tracking
+				this.state.inFlight.delete(key);
 			}
 		}
 
 		return undefined;
+	}
+
+	/**
+	 * Internal: spawn a client for a server/root combination
+	 */
+	private async spawnClient(server: LSPServerInfo, root: string, key: string): Promise<SpawnedServer | undefined> {
+		try {
+			const spawned = await server.spawn(root);
+			if (!spawned) {
+				this.state.broken.add(key);
+				return undefined;
+			}
+
+			const client = await createLSPClient({
+				serverId: server.id,
+				process: spawned.process,
+				root,
+				initialization: spawned.initialization,
+			});
+
+			this.state.clients.set(key, client);
+			return { client, info: server };
+		} catch (err) {
+			console.error(`[lsp] Failed to spawn ${server.id}:`, err);
+			this.state.broken.add(key);
+			return undefined;
+		}
 	}
 
 	/**
@@ -148,6 +177,9 @@ export class LSPService {
 	 * Shutdown all LSP clients
 	 */
 	async shutdown(): Promise<void> {
+		// Cancel any in-flight spawns
+		this.state.inFlight.clear();
+
 		for (const [key, client] of this.state.clients) {
 			try {
 				await client.shutdown();
@@ -156,6 +188,7 @@ export class LSPService {
 			}
 		}
 		this.state.clients.clear();
+		this.state.broken.clear();
 	}
 
 	/**
