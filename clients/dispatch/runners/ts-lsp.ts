@@ -111,25 +111,29 @@ async function runWithBuiltinClient(ctx: DispatchContext): Promise<RunnerResult>
 	// Convert to diagnostics
 	const diagnostics: Diagnostic[] = [];
 
-	// The built-in client returns ts.Diagnostic with different shape
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	for (const d of diags as any[]) {
+	// The built-in client returns Diagnostic with { range: { start: { line, character } } }
+	for (const d of diags) {
+		// Safely access nested properties
+		if (!d.range?.start) continue;
+
+		const line = d.range.start.line;
+		const character = d.range.start.character ?? 0;
 		const severity =
-			d.category === 1 ? "error" : d.category === 2 ? "warning" : "info";
-		const semantic = d.category === 1 ? "blocking" : "warning";
+			d.severity === 1 ? "error" : d.severity === 2 ? "warning" : "info";
+		const semantic = d.severity === 1 ? "blocking" : "warning";
 
 		// Find fixes for this line
-		const lineFixes = allFixes.get(d.start.line);
+		const lineFixes = allFixes.get(line);
 		const fixDescription = lineFixes?.[0]?.description;
 
 		diagnostics.push({
-			id: `ts:${d.code}:${d.start.line}`,
+			id: `ts:${d.code}:${line}`,
 			message: fixDescription
 				? `${d.message} [💡 ${fixDescription}]`
 				: d.message,
 			filePath: ctx.filePath,
-			line: d.start.line + 1,
-			column: d.start.character + 1,
+			line: line + 1,
+			column: character + 1,
 			severity,
 			semantic,
 			tool: "ts-lsp",

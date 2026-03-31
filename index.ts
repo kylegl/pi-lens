@@ -1044,6 +1044,9 @@ export default function (pi: ExtensionAPI) {
 		if (!pi.getFlag("no-autoformat") && fileContent) {
 			const formatService = getFormatService();
 			try {
+				// Record file read to establish FileTime baseline before formatting
+				// This prevents "modified externally" false positives when agent writes file
+				formatService.recordRead(filePath);
 				const result = await formatService.formatFile(filePath);
 				if (result.anyChanged) {
 					dbg(`autoformat: ${result.formatters.map(f => `${f.name}(${f.changed ? "changed" : "unchanged"})`).join(", ")}`);
