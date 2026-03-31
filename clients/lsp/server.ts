@@ -447,7 +447,8 @@ export const DockerServer: LSPServerInfo = {
 	extensions: [".dockerfile", "Dockerfile"],
 	root: async () => process.cwd(),
 	async spawn() {
-		const proc = launchViaPackageManager("dockerfile-language-server-nodejs", ["--stdio"], {});
+		// Manual install required: npm install -g dockerfile-language-server-nodejs
+		const proc = launchLSP("dockerfile-language-server-nodejs", ["--stdio"], {});
 		return { process: proc };
 	},
 };
@@ -493,7 +494,8 @@ export const VueServer: LSPServerInfo = {
 	extensions: [".vue"],
 	root: createRootDetector(["package-lock.json", "bun.lockb", "bun.lock", "pnpm-lock.yaml", "yarn.lock"], [".pi-lens"]),
 	async spawn(root) {
-		const proc = launchViaPackageManager("@vue/language-server", ["--stdio"], { cwd: root });
+		// Manual install required: npm install -g @vue/language-server
+		const proc = launchLSP("vue-language-server", ["--stdio"], { cwd: root });
 		return { process: proc };
 	},
 };

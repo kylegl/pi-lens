@@ -2,7 +2,7 @@
  * Auto-Installation System for pi-lens
  * 
  * Automatically installs required tools when they're not found.
- * Covers 14/31 LSP servers (npm/pip installable) plus linting tools.
+ * Covers 12/31 LSP servers (npm/pip installable) plus linting tools.
  * 
  * Core LSP (5):
  * - typescript-language-server (TypeScript)
@@ -11,14 +11,12 @@
  * - vscode-json-languageserver (JSON)
  * - bash-language-server (Bash)
  * 
- * Web Framework LSP (4):
- * - @vue/language-server (Vue)
+ * Web Framework LSP (2):
  * - svelte-language-server (Svelte)
  * - vscode-eslint-language-server (ESLint)
  * - vscode-css-languageserver (CSS/SCSS/Sass/Less)
  * 
- * DevOps/Config LSP (2):
- * - dockerfile-language-server-nodejs (Dockerfile)
+ * Database/ORM LSP (1):
  * - @prisma/language-server (Prisma)
  * 
  * Linting/Structural (3):
@@ -130,24 +128,15 @@ const TOOLS: ToolDefinition[] = [
 		packageName: "bash-language-server",
 		binaryName: "bash-language-server",
 	},
-	{
-		id: "dockerfile-language-server",
-		name: "Dockerfile Language Server",
-		checkCommand: "dockerfile-language-server-nodejs",
-		checkArgs: ["--version"],
-		installStrategy: "npm",
-		packageName: "dockerfile-language-server-nodejs",
-		binaryName: "dockerfile-language-server-nodejs",
-	},
 	// Web framework LSP servers
 	{
-		id: "vue-language-server",
-		name: "Vue Language Server",
-		checkCommand: "vue-language-server",
+		id: "svelte-language-server",
+		name: "Svelte Language Server",
+		checkCommand: "svelteserver",
 		checkArgs: ["--version"],
 		installStrategy: "npm",
-		packageName: "@vue/language-server",
-		binaryName: "vue-language-server",
+		packageName: "svelte-language-server",
+		binaryName: "svelteserver",
 	},
 	{
 		id: "svelte-language-server",
