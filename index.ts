@@ -305,59 +305,6 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// DISABLED: lens-booboo-fix command - disabled per user request
-	pi.registerCommand("lens-booboo-fix", {
-		description: "[DISABLED] This command is currently disabled.",
-		handler: async (_args, ctx) => {
-			ctx.ui.notify(
-				"⚠️ /lens-booboo-fix is currently disabled. Use /lens-booboo to see code quality analysis.",
-				"warning",
-			);
-		},
-	});
-
-	// DISABLED: lens-booboo-delta command - disabled per user request
-	pi.registerCommand("lens-booboo-delta", {
-		description: "[DISABLED] This command is currently disabled.",
-		handler: async (_args, ctx) => {
-			ctx.ui.notify(
-				"⚠️ /lens-booboo-delta is currently disabled. Use /lens-booboo to see code quality analysis.",
-				"warning",
-			);
-		},
-	});
-
-	// DISABLED: lens-booboo-refactor command - disabled per user request
-	pi.registerCommand("lens-booboo-refactor", {
-		description: "[DISABLED] This command is currently disabled.",
-		handler: async (_args, ctx) => {
-			ctx.ui.notify(
-				"⚠️ /lens-booboo-refactor is currently disabled. Use /lens-booboo to see code quality analysis.",
-				"warning",
-			);
-		},
-	});
-
-	pi.registerCommand("lens-metrics", {
-		description:
-			"[DEPRECATED] Temporarily disabled. Will be restructured in a future release.",
-		handler: async (_args, ctx) => {
-			ctx.ui.notify(
-				"⚠️ /lens-metrics is deprecated and temporarily disabled. It will be restructured in a future release. Use /lens-booboo for code quality analysis instead.",
-				"warning",
-			);
-		},
-	});
-
-	// DEPRECATED: lens-rate command - needs re-structuring
-	pi.registerCommand("lens-rate", {
-		description: "[DEPRECATED] Needs re-structuring. Use /lens-booboo instead.",
-		handler: async (_args, ctx) => {
-			ctx.ui.notify(
-				"⚠️ /lens-rate is deprecated and needs re-structuring. Use /lens-booboo for code quality analysis instead.",
-				"warning",
-			);
-		},
-	});
 
 	pi.registerCommand("lens-tdi", {
 		description:
