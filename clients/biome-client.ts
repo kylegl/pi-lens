@@ -204,16 +204,11 @@ export class BiomeClient {
 			const beforeDiags = this.checkFile(filePath);
 			const fixableCount = beforeDiags.filter((d) => d.fixable).length;
 
-			// Apply fixes
+			// Apply safe fixes only — --unsafe removes unused vars/imports which can delete
+			// code the agent is mid-way through writing (e.g. a new interface not yet wired up)
 			const result = safeSpawn(
 				"npx",
-				[
-					"@biomejs/biome",
-					"check",
-					"--write",
-					"--unsafe", // Apply unsafe fixes too
-					absolutePath,
-				],
+				["@biomejs/biome", "check", "--write", absolutePath],
 				{
 					timeout: 15000,
 				},
@@ -268,8 +263,8 @@ export class BiomeClient {
 
 		// Filter to existing files
 		const validFiles = filePaths
-			.map(f => path.resolve(f))
-			.filter(f => fs.existsSync(f));
+			.map((f) => path.resolve(f))
+			.filter((f) => fs.existsSync(f));
 
 		if (validFiles.length === 0) {
 			return { success: true, fixed: 0, changed: 0 };
@@ -280,19 +275,13 @@ export class BiomeClient {
 			let totalFixable = 0;
 			for (const file of validFiles) {
 				const diags = this.checkFile(file);
-				totalFixable += diags.filter(d => d.fixable).length;
+				totalFixable += diags.filter((d) => d.fixable).length;
 			}
 
 			// Run biome once on all files - much faster than npx per file
 			const result = safeSpawn(
 				"npx",
-				[
-					"@biomejs/biome",
-					"check",
-					"--write",
-					"--unsafe",
-					...validFiles,
-				],
+				["@biomejs/biome", "check", "--write", "--unsafe", ...validFiles],
 				{
 					timeout: 60000, // Longer timeout for batch
 				},
@@ -309,13 +298,15 @@ export class BiomeClient {
 
 			// Count how many files actually changed
 			let changedCount = 0;
-			for (const file of validFiles) {
+			for (const _file of validFiles) {
 				// We don't know exactly which files changed without re-reading,
 				// so we report total files processed
 				changedCount++;
 			}
 
-			this.log(`Fixed ${totalFixable} issue(s) in ${validFiles.length} file(s)`);
+			this.log(
+				`Fixed ${totalFixable} issue(s) in ${validFiles.length} file(s)`,
+			);
 
 			return { success: true, fixed: totalFixable, changed: changedCount };
 		} catch (err) {
