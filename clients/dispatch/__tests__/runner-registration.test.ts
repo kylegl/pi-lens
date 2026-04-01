@@ -45,8 +45,8 @@ describe("Runner Registration", () => {
 
 		it("should be able to retrieve any registered runner by ID", () => {
 			for (const runner of allRunners) {
-			// Skip disabled runners (those with no appliesTo)
-			if (!(runner.appliesTo?.length ?? 0)) continue;
+				// Skip disabled runners (those with no appliesTo)
+				if (!(runner.appliesTo?.length ?? 0)) continue;
 				const retrieved = getRunner(runner.id);
 				expect(retrieved).toBeDefined();
 				expect(retrieved?.id).toBe(runner.id);
@@ -74,10 +74,16 @@ describe("Runner Registration", () => {
 			];
 
 			for (const runner of allRunners) {
-			// Skip disabled runners (those with no appliesTo)
-			if (!(runner.appliesTo?.length ?? 0)) continue;
+				// Skip disabled runners (those with no appliesTo)
+				if (!(runner.appliesTo?.length ?? 0)) continue;
 				// Each runner should have at least one appliesTo
-				if (!(runner.appliesTo?.length ?? 0)) { console.error(`Runner ${runner.id} has no appliesTo`); } expect(runner.appliesTo?.length ?? 0, `Runner ${runner.id} should have appliesTo`).toBeGreaterThan(0);
+				if (!(runner.appliesTo?.length ?? 0)) {
+					console.error(`Runner ${runner.id} has no appliesTo`);
+				}
+				expect(
+					runner.appliesTo?.length ?? 0,
+					`Runner ${runner.id} should have appliesTo`,
+				).toBeGreaterThan(0);
 
 				// All appliesTo should be valid kinds
 				for (const kind of runner.appliesTo) {
@@ -88,8 +94,8 @@ describe("Runner Registration", () => {
 
 		it("should have priority defined", () => {
 			for (const runner of allRunners) {
-			// Skip disabled runners (those with no appliesTo)
-			if (!(runner.appliesTo?.length ?? 0)) continue;
+				// Skip disabled runners (those with no appliesTo)
+				if (!(runner.appliesTo?.length ?? 0)) continue;
 				// Priority should be a number (or undefined, which defaults to 100)
 				if (runner.priority !== undefined) {
 					expect(typeof runner.priority).toBe("number");
@@ -100,16 +106,16 @@ describe("Runner Registration", () => {
 
 		it("should have enabledByDefault boolean", () => {
 			for (const runner of allRunners) {
-			// Skip disabled runners (those with no appliesTo)
-			if (!(runner.appliesTo?.length ?? 0)) continue;
+				// Skip disabled runners (those with no appliesTo)
+				if (!(runner.appliesTo?.length ?? 0)) continue;
 				expect(typeof runner.enabledByDefault).toBe("boolean");
 			}
 		});
 
 		it("should have a run function", () => {
 			for (const runner of allRunners) {
-			// Skip disabled runners (those with no appliesTo)
-			if (!(runner.appliesTo?.length ?? 0)) continue;
+				// Skip disabled runners (those with no appliesTo)
+				if (!(runner.appliesTo?.length ?? 0)) continue;
 				expect(typeof runner.run).toBe("function");
 			}
 		});
@@ -127,10 +133,8 @@ describe("Runner Registration", () => {
 			"ruff-lint",
 			"shellcheck",
 			"spellcheck",
-			"ast-grep",
 			"ast-grep-napi",
 			"architect",
-			"ast-grep-napi",
 			"config-validation",
 		];
 

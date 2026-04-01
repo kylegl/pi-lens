@@ -16,6 +16,17 @@ import type {
 	RunnerResult,
 } from "../types.js";
 
+// Module-level singleton: web-tree-sitter WASM must only be initialized once per process.
+// Creating a new TreeSitterClient() on every write resets TRANSFER_BUFFER (a module-level
+// WASM pointer) — concurrent writes race on _ts_init() and corrupt shared WASM state → crash.
+let _sharedClient: TreeSitterClient | null = null;
+function getSharedClient(): TreeSitterClient {
+	if (!_sharedClient) {
+		_sharedClient = new TreeSitterClient();
+	}
+	return _sharedClient;
+}
+
 const treeSitterRunner: RunnerDefinition = {
 	id: "tree-sitter",
 	appliesTo: ["jsts", "python"],
@@ -24,8 +35,8 @@ const treeSitterRunner: RunnerDefinition = {
 	skipTestFiles: false, // Run on test files too (structural issues matter there)
 
 	async run(ctx: DispatchContext): Promise<RunnerResult> {
-		// Initialize tree-sitter client
-		const client = new TreeSitterClient();
+		// Use singleton client — WASM must never be re-initialized after first call
+		const client = getSharedClient();
 		if (!client.isAvailable()) {
 			return { status: "skipped", diagnostics: [], semantic: "none" };
 		}

@@ -22,8 +22,8 @@ const oxlintRunner: RunnerDefinition = {
 	id: "oxlint",
 	appliesTo: ["jsts"],
 	priority: 12,
-	enabledByDefault: true,
-	skipTestFiles: false,
+	enabledByDefault: false, // Opt-in: may conflict with ESLint in existing projects
+	skipTestFiles: true,
 
 	async run(ctx: DispatchContext): Promise<RunnerResult> {
 		const cwd = ctx.cwd || process.cwd();

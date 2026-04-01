@@ -1,30 +1,22 @@
-/**
- * Bus-Integrated Dispatcher for pi-lens
- * 
- * Bridges the declarative dispatch system with the event bus.
- * 
- * Changes from original dispatcher:
- * - Publishes events for each runner lifecycle phase
- * - Supports concurrent execution with progress tracking
- * - Integrates with DiagnosticAggregator for results
- */
-
 import {
-	DiagnosticFound,
-	RunnerStarted,
-	RunnerCompleted,
-	AutoFixApplied,
-	FileModified,
-	ReportReady,
 	type Diagnostic,
+	DiagnosticFound,
+	FileModified,
 	type OutputSemantic,
+	ReportReady,
+	RunnerCompleted,
+	RunnerStarted,
 } from "../bus/events.js";
-import { publish } from "../bus/bus.js";
-import { formatDiagnostic, formatDiagnostics, EMOJI } from "./utils/format-utils.js";
+import { formatDiagnostics } from "./utils/format-utils.js";
 // Import runners to register them
 import "./runners/index.js";
 
-import type { DispatchContext, RunnerDefinition, RunnerResult, RunnerGroup } from "./types.js";
+import type {
+	DispatchContext,
+	RunnerDefinition,
+	RunnerGroup,
+	RunnerResult,
+} from "./types.js";
 
 // --- Enhanced Dispatch Result ---
 
@@ -53,7 +45,7 @@ async function runRunner(
 	defaultSemantic: OutputSemantic,
 ): Promise<RunnerResult & { durationMs: number }> {
 	const startTime = Date.now();
-	
+
 	// Publish runner started event
 	RunnerStarted.publish({
 		runnerId: runner.id,
@@ -62,6 +54,15 @@ async function runRunner(
 	});
 
 	try {
+		// Check when() condition async-safely (sync filter in caller can't await Promises)
+		if (runner.when && !(await runner.when(ctx))) {
+			return {
+				status: "skipped",
+				diagnostics: [],
+				semantic: defaultSemantic,
+				durationMs: Date.now() - startTime,
+			};
+		}
 		const result = await runner.run(ctx);
 		const durationMs = Date.now() - startTime;
 
@@ -77,7 +78,8 @@ async function runRunner(
 
 		// Publish runner completed event
 		// Map "succeeded" to "completed" for the event status
-		const eventStatus = result.status === "succeeded" ? "completed" : result.status;
+		const eventStatus =
+			result.status === "succeeded" ? "completed" : result.status;
 		RunnerCompleted.publish({
 			runnerId: runner.id,
 			filePath: ctx.filePath,
@@ -137,10 +139,11 @@ export async function dispatchConcurrent(
 				})
 			: group.runnerIds;
 
+		// Note: when() is async — must be awaited. Filter it out here synchronously
+		// (runners without when always run; runners with when are checked inside runRunner).
 		const runners = runnerIds
 			.map((id) => getRunner(id))
-			.filter((r): r is RunnerDefinition => r !== undefined)
-			.filter((r) => (r.when ? r.when(ctx) : true));
+			.filter((r): r is RunnerDefinition => r !== undefined);
 
 		const semantic = group.semantic ?? "warning";
 
@@ -226,7 +229,10 @@ export async function dispatchConcurrent(
 export async function dispatchLintWithBus(
 	filePath: string,
 	cwd: string,
-	pi: { getFlag(flag: string): string | boolean | undefined; log?: (msg: string) => void },
+	pi: {
+		getFlag(flag: string): string | boolean | undefined;
+		log?: (msg: string) => void;
+	},
 ): Promise<string> {
 	const { createDispatchContext } = await import("./dispatcher.js");
 	const { getRunnersForKind } = await import("./dispatcher.js");
@@ -238,7 +244,8 @@ export async function dispatchLintWithBus(
 		changeType: "external",
 	});
 
-	const ctx = createDispatchContext(filePath, cwd, pi);
+	// blockingOnly=true: post-write dispatch only reports blocking errors (same as standard dispatchLint)
+	const ctx = createDispatchContext(filePath, cwd, pi, undefined, true);
 
 	const kind = ctx.kind;
 	if (!kind) return "";

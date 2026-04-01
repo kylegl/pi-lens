@@ -120,14 +120,6 @@ export const biomeFormatter: FormatterInfo = {
 			if (pkg.devDependencies?.["@biomejs/biome"]) return true;
 		}
 
-		// Fallback: Auto-install via pi-lens installer if no local config
-		// This ensures biome is available without requiring project-level installation
-		const { ensureTool } = await import("./installer/index.js");
-		const installedPath = await ensureTool("biome");
-		if (installedPath) {
-			return true;
-		}
-
 		return false;
 	},
 };

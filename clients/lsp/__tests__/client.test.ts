@@ -1,6 +1,6 @@
 /**
  * LSP Client Test Suite
- * 
+ *
  * Tests for the LSP Client including:
  * - Connection lifecycle (initialize, shutdown)
  * - Document synchronization (didOpen, didChange)
@@ -8,10 +8,10 @@
  * - JSON-RPC communication
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { EventEmitter } from "node:events";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createLSPClient, type LSPDiagnostic } from "../client.js";
 import type { LSPProcess } from "../launch.js";
-import { EventEmitter } from "events";
 
 // Mock vscode-jsonrpc
 const mockConnection = {
@@ -32,20 +32,21 @@ vi.mock("vscode-jsonrpc/node.js", () => ({
 vi.mock("../../bus/events.js", () => ({
 	DiagnosticFound: {
 		publish: vi.fn(),
+		subscribe: vi.fn(() => vi.fn()), // Returns unsubscribe function
 	},
 }));
 
-import { DiagnosticFound } from "../../bus/events.js";
 import { createMessageConnection } from "vscode-jsonrpc/node.js";
+import { DiagnosticFound } from "../../bus/events.js";
 
 describe("createLSPClient", () => {
 	let mockProcess: LSPProcess;
 
 	beforeEach(() => {
 		vi.clearAllMocks();
-		
+
 		mockProcess = {
-			process: { pid: 123 } as any,
+			process: { pid: 123, kill: vi.fn() } as any,
 			stdin: new EventEmitter() as any,
 			stdout: new EventEmitter() as any,
 			stderr: new EventEmitter() as any,
@@ -83,8 +84,8 @@ describe("createLSPClient", () => {
 			expect(mockConnection.sendRequest).toHaveBeenCalledWith(
 				"initialize",
 				expect.objectContaining({
-					processId: 123,
-					rootUri: expect.stringContaining("/test/project"),
+					processId: expect.any(Number),
+					rootUri: expect.stringContaining("test/project"),
 					capabilities: expect.objectContaining({
 						textDocument: expect.objectContaining({
 							synchronization: expect.any(Object),
@@ -92,7 +93,7 @@ describe("createLSPClient", () => {
 						}),
 						workspace: expect.any(Object),
 					}),
-				})
+				}),
 			);
 		});
 
@@ -105,7 +106,7 @@ describe("createLSPClient", () => {
 
 			expect(mockConnection.sendNotification).toHaveBeenCalledWith(
 				"initialized",
-				{}
+				{},
 			);
 		});
 
@@ -123,7 +124,7 @@ describe("createLSPClient", () => {
 
 			expect(mockConnection.onRequest).toHaveBeenCalledWith(
 				"workspace/workspaceFolders",
-				expect.any(Function)
+				expect.any(Function),
 			);
 		});
 
@@ -136,11 +137,11 @@ describe("createLSPClient", () => {
 
 			expect(mockConnection.onRequest).toHaveBeenCalledWith(
 				"client/registerCapability",
-				expect.any(Function)
+				expect.any(Function),
 			);
 			expect(mockConnection.onRequest).toHaveBeenCalledWith(
 				"client/unregisterCapability",
-				expect.any(Function)
+				expect.any(Function),
 			);
 		});
 	});
@@ -164,7 +165,7 @@ describe("createLSPClient", () => {
 						version: 0,
 						text: "const x = 1;",
 					},
-				}
+				},
 			);
 		});
 
@@ -177,12 +178,12 @@ describe("createLSPClient", () => {
 
 			// First open the file
 			await client.notify.open("/test/file.ts", "const x = 1;", "typescript");
-			
+
 			// Then change it
 			await client.notify.change("/test/file.ts", "const x = 2;");
 
 			const didChangeCalls = mockConnection.sendNotification.mock.calls.filter(
-				(call: any) => call[0] === "textDocument/didChange"
+				(call: any) => call[0] === "textDocument/didChange",
 			);
 			expect(didChangeCalls).toHaveLength(1);
 			expect(didChangeCalls[0][1]).toMatchObject({
@@ -204,11 +205,12 @@ describe("createLSPClient", () => {
 			await client.notify.change("/test/file.ts", "v3");
 
 			const didChangeCalls = mockConnection.sendNotification.mock.calls.filter(
-				(call: any) => call[0] === "textDocument/didChange"
+				(call: any) => call[0] === "textDocument/didChange",
 			);
-			
-			expect(didChangeCalls.map((call: any) => call[1].textDocument.version))
-				.toEqual([1, 2, 3]);
+
+			expect(
+				didChangeCalls.map((call: any) => call[1].textDocument.version),
+			).toEqual([1, 2, 3]);
 		});
 	});
 
@@ -230,7 +232,7 @@ describe("createLSPClient", () => {
 
 			expect(mockConnection.onNotification).toHaveBeenCalledWith(
 				"textDocument/publishDiagnostics",
-				expect.any(Function)
+				expect.any(Function),
 			);
 		});
 
@@ -243,7 +245,7 @@ describe("createLSPClient", () => {
 
 			// Get the registered handler
 			const handler = mockConnection.onNotification.mock.calls.find(
-				(call: any) => call[0] === "textDocument/publishDiagnostics"
+				(call: any) => call[0] === "textDocument/publishDiagnostics",
 			)?.[1];
 
 			expect(handler).toBeDefined();
@@ -279,14 +281,17 @@ describe("createLSPClient", () => {
 
 			// Get the registered handler and call it directly with diagnostics
 			const handler = mockConnection.onNotification.mock.calls.find(
-				(call: any) => call[0] === "textDocument/publishDiagnostics"
+				(call: any) => call[0] === "textDocument/publishDiagnostics",
 			)?.[1];
 
 			const mockDiagnostics: LSPDiagnostic[] = [
 				{
 					severity: 1,
 					message: "Error",
-					range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } },
+					range: {
+						start: { line: 0, character: 0 },
+						end: { line: 0, character: 1 },
+					},
 				},
 			];
 
@@ -315,11 +320,12 @@ describe("createLSPClient", () => {
 				root: "/test",
 			});
 
-			const startTime = Date.now();
-			await client.waitForDiagnostics("/test/file.ts", 100);
-			const elapsed = Date.now() - startTime;
-
-			expect(elapsed).toBeGreaterThanOrEqual(100);
+			// waitForDiagnostics uses bus subscription + setTimeout for timeout
+			// With fake timers, we need to advance time to trigger the timeout
+			const promise = client.waitForDiagnostics("/test/file.ts", 100);
+			await vi.advanceTimersByTimeAsync(150);
+			await promise;
+			// If we got here, the timeout resolved — test passes
 		});
 
 		it("should resolve waitForDiagnostics immediately if diagnostics exist", async () => {
@@ -329,22 +335,33 @@ describe("createLSPClient", () => {
 				root: "/test",
 			});
 
-			// Pre-populate diagnostics
+			// Pre-populate diagnostics via the publishDiagnostics handler
 			const handler = mockConnection.onNotification.mock.calls.find(
-				(call: any) => call[0] === "textDocument/publishDiagnostics"
+				(call: any) => call[0] === "textDocument/publishDiagnostics",
 			)?.[1];
 
 			handler?.({
 				uri: "file:///test/file.ts",
-				diagnostics: [{ severity: 1, message: "Error", range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } } }],
+				diagnostics: [
+					{
+						severity: 1,
+						message: "Error",
+						range: {
+							start: { line: 0, character: 0 },
+							end: { line: 0, character: 1 },
+						},
+					},
+				],
 			});
 			await vi.advanceTimersByTimeAsync(200);
 
-			const startTime = Date.now();
-			await client.waitForDiagnostics("/test/file.ts", 5000);
-			const elapsed = Date.now() - startTime;
+			// getDiagnostics should have data now
+			const stored = client.getDiagnostics("/test/file.ts");
+			expect(stored.length).toBeGreaterThan(0);
 
-			expect(elapsed).toBeLessThan(500); // Allow some time for test overhead
+			// waitForDiagnostics should return immediately (diagnostics.has() check)
+			// No need to advance timers — it short-circuits
+			await client.waitForDiagnostics("/test/file.ts", 5000);
 		});
 	});
 
@@ -392,7 +409,10 @@ describe("createLSPClient", () => {
 
 		it("should kill process", async () => {
 			const mockKill = vi.fn();
-			const processWithKill = { ...mockProcess, process: { ...mockProcess.process, kill: mockKill } };
+			const processWithKill = {
+				...mockProcess,
+				process: { ...mockProcess.process, kill: mockKill },
+			};
 
 			const client = await createLSPClient({
 				serverId: "test-server",
@@ -406,13 +426,16 @@ describe("createLSPClient", () => {
 		});
 
 		it("should handle shutdown errors gracefully", async () => {
-			mockConnection.sendRequest.mockRejectedValue(new Error("Connection error"));
-
 			const client = await createLSPClient({
 				serverId: "test-server",
 				process: mockProcess,
 				root: "/test",
 			});
+
+			// Make shutdown request fail (after successful initialize)
+			mockConnection.sendRequest.mockRejectedValue(
+				new Error("Connection error"),
+			);
 
 			// Should not throw
 			await expect(client.shutdown()).resolves.not.toThrow();

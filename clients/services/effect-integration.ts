@@ -1,8 +1,8 @@
 /**
  * Effect-TS Integration for pi-lens Dispatch
- * 
+ *
  * Bridges the Effect service layer with the existing dispatch system.
- * 
+ *
  * This provides:
  * - Concurrent runner execution with Effect.all
  * - Timeout handling for slow runners
@@ -11,21 +11,19 @@
  */
 
 import {
-	runRunnersConcurrent,
-	executeEffect,
-	formatError,
-	type RunnerResult,
-	type ConcurrentRunnerResult,
-} from "./runner-service.js";
-
-import {
-	DiagnosticFound,
-	RunnerStarted,
-	RunnerCompleted,
-	FileModified,
 	type Diagnostic,
+	DiagnosticFound,
+	FileModified,
+	RunnerCompleted,
+	RunnerStarted,
 } from "../bus/events.js";
-import { formatDiagnostic, formatDiagnostics } from "../dispatch/utils/format-utils.js";
+import { formatDiagnostics } from "../dispatch/utils/format-utils.js";
+import {
+	type ConcurrentRunnerResult,
+	executeEffect,
+	type RunnerResult,
+	runRunnersConcurrent,
+} from "./runner-service.js";
 // Import runners to register them in the dispatcher
 import "../dispatch/runners/index.js";
 
@@ -54,16 +52,17 @@ async function runGroupConcurrent(
 	ctx: DispatchContext,
 	group: RunnerGroup,
 ): Promise<{ results: ConcurrentRunnerResult[]; diagnostics: Diagnostic[] }> {
-	const { getRunner, getRunnersForKind } = await import("../dispatch/dispatcher.js");
-	const startTime = Date.now();
+	const { getRunner, getRunnersForKind } = await import(
+		"../dispatch/dispatcher.js"
+	);
+	const _startTime = Date.now();
 
 	// Get runner definitions
 	const runnerDefs = group.filterKinds
-		? group.runnerIds
-				.filter((id) => {
-					const runner = getRunner(id);
-					return runner && ctx.kind && group.filterKinds?.includes(ctx.kind);
-				})
+		? group.runnerIds.filter((id) => {
+				const runner = getRunner(id);
+				return runner && ctx.kind && group.filterKinds?.includes(ctx.kind);
+			})
 		: group.runnerIds;
 
 	const runners = runnerDefs
@@ -76,7 +75,10 @@ async function runGroupConcurrent(
 	}
 
 	// Build the single runner execution function
-	const runSingle = async (filePath: string, runnerId: string): Promise<RunnerResult> => {
+	const runSingle = async (
+		filePath: string,
+		runnerId: string,
+	): Promise<RunnerResult> => {
 		const runner = getRunner(runnerId);
 		if (!runner) {
 			return { diagnostics: [], durationMs: 0 };
@@ -101,7 +103,12 @@ async function runGroupConcurrent(
 				filePath: ctx.filePath,
 				line: d.line,
 				column: d.column,
-				severity: d.severity === "error" ? "error" : d.severity === "warning" ? "warning" : "info",
+				severity:
+					d.severity === "error"
+						? "error"
+						: d.severity === "warning"
+							? "warning"
+							: "info",
 				semantic: d.semantic ?? result.semantic ?? "warning",
 				tool: runnerId,
 				rule: d.rule,
@@ -150,7 +157,7 @@ async function runGroupConcurrent(
 	// Run all runners concurrently using Effect
 	const runnerIds = runners.map((r) => r.id);
 	const concurrentResults = await executeEffect(
-		runRunnersConcurrent(ctx.filePath, runnerIds, runSingle, 30_000)
+		runRunnersConcurrent(ctx.filePath, runnerIds, runSingle, 30_000),
 	);
 
 	// Collect all diagnostics
@@ -165,7 +172,7 @@ async function runGroupConcurrent(
 					severity: d.severity,
 					semantic: d.semantic ?? group.semantic ?? "warning",
 					tool: result.runnerId,
-				}))
+				})),
 			);
 		}
 	}
@@ -255,7 +262,8 @@ export async function dispatchLintWithEffect(
 	const { createDispatchContext } = await import("../dispatch/dispatcher.js");
 	const { TOOL_PLANS } = await import("../dispatch/plan.js");
 
-	const ctx = createDispatchContext(filePath, cwd, pi);
+	// blockingOnly=true: post-write dispatch only reports blocking errors (same as standard dispatchLint)
+	const ctx = createDispatchContext(filePath, cwd, pi, undefined, true);
 
 	const kind = ctx.kind;
 	if (!kind) return "";
