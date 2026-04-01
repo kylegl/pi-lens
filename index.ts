@@ -1201,7 +1201,7 @@ export default function (pi: ExtensionAPI) {
 			// Python: Ruff auto-fix (enabled by default)
 			if (
 				!noAutofixRuff &&
-				ruffClient.isAvailable() &&
+				(await ruffClient.ensureAvailable()) &&
 				ruffClient.isPythonFile(filePath)
 			) {
 				const result = ruffClient.fixFile(filePath);

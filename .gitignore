@@ -36,3 +36,11 @@ test-*.py
 test-*.md
 test-*.sh
 test-filetime/
+
+# Documentation files - only keep specific docs in public repo
+*.md
+!AGENTS.md
+!README.md
+!CHANGELOG.md
+!AST_GREP_RULES.md
+!skills/**/*.md

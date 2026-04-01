@@ -120,12 +120,11 @@ export const biomeFormatter: FormatterInfo = {
 			if (pkg.devDependencies?.["@biomejs/biome"]) return true;
 		}
 
-		// Fallback: check if Biome is available via npx (globally or through npm cache)
-		// This allows Biome to work even without explicit project configuration
-		const result = safeSpawn("npx", ["@biomejs/biome", "--version"], {
-			timeout: 10000,
-		});
-		if (!result.error && result.status === 0) {
+		// Fallback: Auto-install via pi-lens installer if no local config
+		// This ensures biome is available without requiring project-level installation
+		const { ensureTool } = await import("./installer/index.js");
+		const installedPath = await ensureTool("biome");
+		if (installedPath) {
 			return true;
 		}
 
