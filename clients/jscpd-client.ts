@@ -8,7 +8,6 @@
  * Docs: https://github.com/kucherenko/jscpd
  */
 
-import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -43,6 +42,39 @@ export class JscpdClient {
 		this.log = verbose ? (msg) => console.error(`[jscpd] ${msg}`) : () => {};
 	}
 
+	/**
+	 * Check if jscpd is available, auto-install if not
+	 */
+	async ensureAvailable(): Promise<boolean> {
+		// Fast path: already checked
+		if (this.available !== null) return this.available;
+
+		// Check if available in PATH
+		const result = safeSpawn("jscpd", ["--version"], {
+			timeout: 5000,
+		});
+		this.available = !result.error && result.status === 0;
+
+		if (this.available) {
+			return true;
+		}
+
+		// Auto-install via pi-lens installer
+		const { ensureTool } = await import("./installer/index.js");
+		const installedPath = await ensureTool("jscpd");
+
+		if (installedPath) {
+			this.available = true;
+			return true;
+		}
+
+		return false;
+	}
+
+	/**
+	 * Check if jscpd is available (legacy sync method)
+	 * Prefer ensureAvailable() for auto-install behavior
+	 */
 	isAvailable(): boolean {
 		if (this.available !== null) return this.available;
 		const result = safeSpawn("npx", ["jscpd", "--version"], {
@@ -57,7 +89,12 @@ export class JscpdClient {
 	 * Uses a temp output dir to capture JSON report.
 	 * @param isTsProject - If true, excludes .js files (they're compiled artifacts in TS projects)
 	 */
-	scan(cwd: string, minLines = 5, minTokens = 50, isTsProject = false): JscpdResult {
+	scan(
+		cwd: string,
+		minLines = 5,
+		minTokens = 50,
+		isTsProject = false,
+	): JscpdResult {
 		// Return early for non-existent or empty directories
 		if (!fs.existsSync(cwd)) {
 			return {
@@ -96,7 +133,8 @@ export class JscpdClient {
 		fs.mkdirSync(outDir, { recursive: true });
 
 		// Build ignore pattern - exclude .js in TS projects (compiled artifacts)
-		const baseIgnores = "**/node_modules/**,**/dist/**,**/build/**,**/.git/**,**/.pi-lens/**,**/*.md,**/*.txt,**/*.json,**/*.yaml,**/*.yml,**/*.toml,**/*.lock,**/*.test.*,**/*.spec.*,**/*.poc.test.*,**/__tests__/**,**/tests/**";
+		const baseIgnores =
+			"**/node_modules/**,**/dist/**,**/build/**,**/.git/**,**/.pi-lens/**,**/*.md,**/*.txt,**/*.json,**/*.yaml,**/*.yml,**/*.toml,**/*.lock,**/*.test.*,**/*.spec.*,**/*.poc.test.*,**/__tests__/**,**/tests/**";
 		const ignorePattern = isTsProject
 			? `${baseIgnores},**/*.js,**/*.jsx`
 			: baseIgnores;

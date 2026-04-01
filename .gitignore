@@ -44,3 +44,4 @@ test-filetime/
 !CHANGELOG.md
 !AST_GREP_RULES.md
 !skills/**/*.md
+clients/dispatch/debug.log
