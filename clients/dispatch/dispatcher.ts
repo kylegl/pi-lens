@@ -33,6 +33,7 @@ import type {
 import { formatDiagnostics } from "./utils/format-utils.js";
 
 // --- In-Memory Baseline Store ---
+// DEBUG TEST EDIT - Testing dispatch logging
 
 export function createBaselineStore(): BaselineStore {
 	const baselines = new Map<string, unknown[]>();
@@ -124,6 +125,7 @@ export function createDispatchContext(
 	cwd: string,
 	pi: PiAgentAPI,
 	baselines?: BaselineStore,
+	blockingOnly?: boolean,
 ): DispatchContext {
 	const kind = detectFileKind(filePath);
 
@@ -135,6 +137,7 @@ export function createDispatchContext(
 		autofix: !!(pi.getFlag("autofix-biome") || pi.getFlag("autofix-ruff")),
 		deltaMode: !pi.getFlag("no-delta"),
 		baselines: baselines ?? createBaselineStore(),
+		blockingOnly,
 
 		async hasTool(command: string): Promise<boolean> {
 			return checkToolAvailability(command);
@@ -263,7 +266,7 @@ export async function dispatchForFile(
 	let stopped = false;
 	const runnerLatencies: RunnerLatency[] = [];
 
-	// DEBUG: Log dispatch start
+	// Debug logging goes to latency log only (not console - avoid noise)
 	logLatency({
 		type: "phase",
 		filePath: ctx.filePath,
@@ -300,6 +303,15 @@ export async function dispatchForFile(
 					diagnosticCount: 0,
 					semantic: "unknown",
 				});
+				logLatency({
+					type: "runner",
+					filePath: ctx.filePath,
+					runnerId,
+					durationMs: 0,
+					status: "not_registered",
+					diagnosticCount: 0,
+					semantic: "unknown",
+				});
 				continue;
 			}
 
@@ -313,6 +325,15 @@ export async function dispatchForFile(
 					status: "when_skipped",
 					diagnosticCount: 0,
 					semantic: runner.id,
+				});
+				logLatency({
+					type: "runner",
+					filePath: ctx.filePath,
+					runnerId,
+					durationMs: 0,
+					status: "when_skipped",
+					diagnosticCount: 0,
+					semantic: "when_condition",
 				});
 				continue;
 			}
@@ -429,8 +450,22 @@ export async function dispatchForFile(
 		});
 	}
 
-	// Log summary to stderr for real-time monitoring
-	console.error(formatLatencyReport(latencyReport));
+	// Log summary to latency log only (not console - avoid noise)
+	logLatency({
+		type: "tool_result",
+		filePath: ctx.filePath,
+		durationMs: latencyReport.totalDurationMs,
+		result: "dispatch_complete",
+		metadata: {
+			runners: runnerLatencies.map((r) => ({
+				id: r.runnerId,
+				duration: r.durationMs,
+				status: r.status,
+			})),
+			totalDiagnostics: allDiagnostics.length,
+			blockers: blockers.length,
+		},
+	});
 
 	return {
 		diagnostics: allDiagnostics,
@@ -473,7 +508,8 @@ export async function dispatchLint(
 	pi: PiAgentAPI,
 	baselines?: BaselineStore,
 ): Promise<string> {
-	const ctx = createDispatchContext(filePath, cwd, pi, baselines);
+	// By default, only run BLOCKING rules for fast feedback on file write
+	const ctx = createDispatchContext(filePath, cwd, pi, baselines, true);
 
 	// Get runners for this file kind
 	const runners = getRunnersForKind(ctx.kind);

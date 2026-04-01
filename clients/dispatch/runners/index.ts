@@ -4,9 +4,6 @@
 
 import { registerRunner } from "../dispatcher.js";
 import architectRunner from "./architect.js";
-// CONSOLIDATED: ast-grep-napi replaces ast-grep CLI for dispatch
-// CLI version kept for ast_grep_search/ast_grep_replace tools only
-import astGrepNapiRunner from "./ast-grep-napi.js";
 import biomeRunner from "./biome.js";
 import configValidationRunner from "./config-validation.js";
 import goVetRunner from "./go-vet.js";
@@ -29,8 +26,8 @@ import typeSafetyRunner from "./type-safety.js";
 registerRunner(tsLspRunner); // TypeScript type-checking (priority 5)
 registerRunner(pyrightRunner); // Python type-checking (priority 5)
 registerRunner(configValidationRunner); // Config/env validation (priority 8)
-// CONSOLIDATED: ast-grep-napi replaces ast-grep CLI for dispatch (100x faster)
-registerRunner(astGrepNapiRunner); // TS/JS structural analysis via NAPI (priority 15)
+// DISABLED: ast-grep-napi temporarily disabled for debugging
+// registerRunner(astGrepNapiRunner); // TS/JS structural analysis via NAPI (priority 15)
 registerRunner(biomeRunner); // Biome formatting/linting (priority 10)
 registerRunner(oxlintRunner); // Oxlint fast JS/TS linter (priority 12)
 registerRunner(treeSitterRunner); // Tree-sitter structural analysis (priority 14)

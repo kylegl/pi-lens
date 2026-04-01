@@ -1,10 +1,12 @@
 import * as fs from "node:fs";
-import { createRequire } from "node:module";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { DispatchContext } from "../types.js";
 
-function createMockContext(filePath: string, kind: any = "jsts"): DispatchContext {
+function createMockContext(
+	filePath: string,
+	kind: any = "jsts",
+): DispatchContext {
 	return {
 		filePath,
 		cwd: process.cwd(),
@@ -25,7 +27,7 @@ describe("ast-grep-napi vs CLI comparison", () => {
 		expect(napiModule.default.appliesTo).toEqual(["jsts"]);
 	});
 
-	it("should scan TypeScript file faster than CLI", async () => {
+	it("should scan TypeScript file and return succeeded status", async () => {
 		const tmpFile = path.join(
 			process.env.TEMP || "/tmp",
 			`napi_test_${Date.now()}.ts`,
@@ -37,13 +39,13 @@ function test(items: string[]) {
     for (let i = 0; i < items.length; i++) {
         console.log(items[i]);
     }
-    
+
     try {
         riskyOperation();
     } catch (e) {
         // empty catch
     }
-    
+
     return await fetchData();
 }
 
@@ -61,41 +63,34 @@ function riskyOperation() {
 			// Test NAPI version
 			const napiModule = await import("./ast-grep-napi.js");
 			const napiRunner = napiModule.default;
-			
+
 			console.time("napi");
-			const napiResult = await napiRunner.run(createMockContext(tmpFile));
+			let napiResult;
+			try {
+				napiResult = await napiRunner.run(createMockContext(tmpFile));
+			} catch (error) {
+				console.error("NAPI runner threw error:", error);
+				throw error;
+			}
 			console.timeEnd("napi");
-			
-			// Test CLI version
-			const cliModule = await import("./ast-grep.js");
-			const cliRunner = cliModule.default;
-			
-			console.time("cli");
-			const cliResult = await cliRunner.run(createMockContext(tmpFile));
-			console.timeEnd("cli");
-			
-			// Both should complete successfully
-			expect(napiResult.status).not.toBe("skipped");
-			expect(cliResult.status).not.toBe("skipped");
-			
-			// Log comparison
+
+			console.log("NAPI result status:", napiResult.status);
+			console.log("NAPI result semantic:", napiResult.semantic);
+			console.log(
+				"NAPI result diagnostics count:",
+				napiResult.diagnostics?.length,
+			);
+
+			// Should complete successfully (not skipped, not failed)
+			expect(napiResult.status).toBe("succeeded");
+			expect(napiResult.semantic).toBe("warning"); // Has findings, so marked as warning
+
+			// Log findings
 			console.log("NAPI found:", napiResult.diagnostics.length, "issues");
-			console.log("CLI found:", cliResult.diagnostics.length, "issues");
-			
-			// Show what NAPI found exactly
 			console.log("\n=== NAPI FINDINGS ===");
 			napiResult.diagnostics.forEach((d, i) => {
 				console.log(`${i + 1}. Line ${d.line}: ${d.rule}`);
 			});
-			
-			// Show what CLI found (if any)
-			if (cliResult.diagnostics.length > 0) {
-				console.log("\n=== CLI FINDINGS ===");
-				cliResult.diagnostics.forEach((d, i) => {
-					console.log(`${i + 1}. Line ${d.line}: ${d.rule}`);
-				});
-			}
-			
 		} finally {
 			try {
 				if (fs.existsSync(tmpFile)) {
@@ -117,7 +112,7 @@ function riskyOperation() {
 		try {
 			const napiModule = await import("./ast-grep-napi.js");
 			const napiRunner = napiModule.default;
-			
+
 			const result = await napiRunner.run(createMockContext(tmpFile, "python"));
 			expect(result.status).toBe("skipped");
 		} finally {

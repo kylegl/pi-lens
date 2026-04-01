@@ -124,6 +124,8 @@ export interface DispatchContext {
 	readonly autofix: boolean;
 	readonly deltaMode: boolean;
 	readonly baselines: BaselineStore;
+	/** Only run blocking rules (severity: error) - used for fast feedback on file write */
+	readonly blockingOnly?: boolean;
 
 	hasTool(command: string): Promise<boolean>;
 	log(message: string): void;

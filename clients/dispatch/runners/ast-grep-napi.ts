@@ -21,15 +21,62 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Lazy load the napi package
 let sg: typeof import("@ast-grep/napi") | undefined;
+let _sgLoadError: Error | undefined;
+let sgLoadAttempted = false;
 
 async function loadSg(): Promise<typeof import("@ast-grep/napi") | undefined> {
 	if (sg) return sg;
+	if (sgLoadAttempted) return undefined; // Don't retry if already failed
+	sgLoadAttempted = true;
 	try {
 		sg = await import("@ast-grep/napi");
 		return sg;
-	} catch {
+	} catch (err) {
+		_sgLoadError = err instanceof Error ? err : new Error(String(err));
 		return undefined;
 	}
+}
+
+// --- Rule Caching ---
+// Cache parsed YAML rules to avoid re-parsing on every file edit
+interface CachedRules {
+	rules: YamlRule[];
+	mtime: number;
+}
+
+const rulesCache = new Map<string, CachedRules>();
+
+/** Get cached rules or reload if cache is stale */
+function _getCachedRules(ruleDir: string): YamlRule[] {
+	// Check if directory exists
+	if (!fs.existsSync(ruleDir)) {
+		return [];
+	}
+
+	// Get directory mtime to detect changes
+	let currentMtime = 0;
+	try {
+		const stats = fs.statSync(ruleDir);
+		currentMtime = stats.mtimeMs;
+	} catch {
+		return [];
+	}
+
+	// Check cache
+	const cached = rulesCache.get(ruleDir);
+	if (cached && cached.mtime === currentMtime) {
+		return cached.rules;
+	}
+
+	// Load and cache
+	const rules = loadYamlRulesUncached(ruleDir);
+	rulesCache.set(ruleDir, { rules, mtime: currentMtime });
+	return rules;
+}
+
+/** Clear rules cache (useful for testing or when rules change) */
+export function clearRulesCache(): void {
+	rulesCache.clear();
 }
 
 // Supported extensions for NAPI
@@ -95,17 +142,17 @@ function getLang(
 	const ext = path.extname(filePath).toLowerCase();
 	switch (ext) {
 		case ".ts":
-			return sgModule.Lang.TypeScript;
+			return sgModule.ts;
 		case ".tsx":
-			return sgModule.Lang.Tsx;
+			return sgModule.tsx;
 		case ".js":
 		case ".jsx":
-			return sgModule.Lang.JavaScript;
+			return sgModule.js;
 		case ".css":
-			return sgModule.Lang.Css;
+			return sgModule.css;
 		case ".html":
 		case ".htm":
-			return sgModule.Lang.Html;
+			return sgModule.html;
 		default:
 			return undefined;
 	}
@@ -131,7 +178,7 @@ interface YamlRule {
 	rule?: YamlRuleCondition;
 }
 
-function loadYamlRules(ruleDir: string): YamlRule[] {
+function loadYamlRulesUncached(ruleDir: string): YamlRule[] {
 	const rules: YamlRule[] = [];
 	if (!fs.existsSync(ruleDir)) return rules;
 
@@ -155,6 +202,11 @@ function loadYamlRules(ruleDir: string): YamlRule[] {
 	}
 
 	return rules;
+}
+
+/** Load rules with caching - use this for production */
+function loadYamlRules(ruleDir: string): YamlRule[] {
+	return _getCachedRules(ruleDir);
 }
 
 function parseSimpleYaml(content: string): YamlRule | null {
@@ -516,8 +568,6 @@ const astGrepNapiRunner: RunnerDefinition = {
 	skipTestFiles: true,
 
 	async run(ctx: DispatchContext): Promise<RunnerResult> {
-		const _startTime = Date.now();
-
 		if (!canHandle(ctx.filePath)) {
 			return { status: "skipped", diagnostics: [], semantic: "none" };
 		}
@@ -536,17 +586,35 @@ const astGrepNapiRunner: RunnerDefinition = {
 			return { status: "skipped", diagnostics: [], semantic: "none" };
 		}
 
-		const content = fs.readFileSync(ctx.filePath, "utf-8");
+		// Check file size to avoid parsing extremely large files
+		const stats = fs.statSync(ctx.filePath);
+		const MAX_FILE_SIZE = 1024 * 1024; // 1MB
+		if (stats.size > MAX_FILE_SIZE) {
+			return { status: "skipped", diagnostics: [], semantic: "none" };
+		}
+
+		let content: string;
+		try {
+			content = fs.readFileSync(ctx.filePath, "utf-8");
+		} catch {
+			return { status: "skipped", diagnostics: [], semantic: "none" };
+		}
 
 		let root: import("@ast-grep/napi").SgRoot;
 		try {
-			root = sgModule.parse(lang, content);
+			// Use the language object's parse method directly
+			root = lang.parse(content);
 		} catch {
 			return { status: "skipped", diagnostics: [], semantic: "none" };
 		}
 
 		const diagnostics: Diagnostic[] = [];
-		const rootNode = root.root();
+		let rootNode: any;
+		try {
+			rootNode = root.root();
+		} catch {
+			return { status: "skipped", diagnostics: [], semantic: "none" };
+		}
 
 		// CONSOLIDATED: Use ast-grep-rules (unified with CLI tools)
 		// Includes both security/architecture rules + slop patterns
@@ -556,12 +624,22 @@ const astGrepNapiRunner: RunnerDefinition = {
 		];
 
 		for (const ruleDir of ruleDirs) {
-			const rules = loadYamlRules(ruleDir);
+			let rules: YamlRule[];
+			try {
+				rules = loadYamlRules(ruleDir);
+			} catch {
+				continue; // Skip this rule directory on error
+			}
 
 			for (const rule of rules) {
 				// Skip rules for different languages (case-insensitive)
 				const lang = rule.language?.toLowerCase();
 				if (lang && lang !== "typescript" && lang !== "javascript") {
+					continue;
+				}
+
+				// When blockingOnly is set, only run BLOCKING rules (severity: error)
+				if (ctx.blockingOnly && rule.severity !== "error") {
 					continue;
 				}
 
@@ -580,20 +658,20 @@ const astGrepNapiRunner: RunnerDefinition = {
 							} catch {
 								// Pattern failed, try manual traversal for kind
 								if (rule.rule.kind) {
-									function findByKind(
+									const findByKindLocal = (
 										node: any,
 										kind: string,
 										depth = 0,
-									): any[] {
+									): any[] => {
 										if (depth > _MAX_AST_DEPTH) return [];
 										const results: any[] = [];
 										if (node.kind() === kind) results.push(node);
 										for (const child of node.children()) {
-											results.push(...findByKind(child, kind, depth + 1));
+											results.push(...findByKindLocal(child, kind, depth + 1));
 										}
 										return results;
-									}
-									matches = findByKind(rootNode, rule.rule.kind);
+									};
+									matches = findByKindLocal(rootNode, rule.rule.kind);
 								}
 							}
 						}
@@ -636,18 +714,13 @@ const astGrepNapiRunner: RunnerDefinition = {
 			}
 		}
 
-		if (diagnostics.length === 0) {
-			return { status: "succeeded", diagnostics: [], semantic: "none" };
-		}
-
+		// Return succeeded even when finding diagnostics - they are warnings, not runner failures
 		return {
-			status: "failed",
+			status: "succeeded",
 			diagnostics,
-			semantic: "warning",
+			semantic: diagnostics.length > 0 ? "warning" : "none",
 		};
 	},
 };
-
-// Log removed - runner disabled due to stability issues
 
 export default astGrepNapiRunner;

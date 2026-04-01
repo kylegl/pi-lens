@@ -1,5 +1,5 @@
 /**
- * Complexity Metrics Client for pi-lens
+ * Complexity Metrics Client for pi-lens (cache test)
  *
  * Calculates AST-based code complexity metrics for TypeScript/JavaScript files.
  * Uses the TypeScript compiler API for parsing.

@@ -29,6 +29,7 @@ import { ensureTool } from "./clients/installer/index.js";
 import { buildInterviewer } from "./clients/interviewer.js";
 import { JscpdClient } from "./clients/jscpd-client.js";
 import { KnipClient } from "./clients/knip-client.js";
+// RELOAD TEST 6: Cache verification run
 import { logLatency } from "./clients/latency-logger.js";
 import { getLSPService, resetLSPService } from "./clients/lsp/index.js";
 import { MetricsClient } from "./clients/metrics-client.js";
@@ -277,6 +278,14 @@ export default function (pi: ExtensionAPI) {
 	pi.registerFlag("auto-install", {
 		description:
 			"Auto-install missing LSP servers without prompting (for Go, Rust, YAML, JSON, Bash)",
+		type: "boolean",
+		default: false,
+	});
+
+	// Internal flag for running only blocking rules on file write (performance)
+	pi.registerFlag("lens-blocking-only", {
+		description:
+			"[Internal] Only run BLOCKING rules (severity: error) for fast feedback",
 		type: "boolean",
 		default: false,
 	});
@@ -1298,7 +1307,9 @@ export default function (pi: ExtensionAPI) {
 				dbg(`typescript-client error: ${err}`);
 			}
 		}
-		phaseEnd("typescript_lsp", { isTsFile: filePath.endsWith(".ts") || filePath.endsWith(".tsx") });
+		phaseEnd("typescript_lsp", {
+			isTsFile: filePath.endsWith(".ts") || filePath.endsWith(".tsx"),
+		});
 
 		// Agent behavior warnings (blind writes, thrashing)
 		if (behaviorWarnings.length > 0) {

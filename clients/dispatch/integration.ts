@@ -37,7 +37,8 @@ export async function dispatchLint(
 	cwd: string,
 	pi: PiAgentAPI,
 ): Promise<string> {
-	const ctx = createDispatchContext(filePath, cwd, pi);
+	// By default, only run BLOCKING rules for fast feedback on file write
+	const ctx = createDispatchContext(filePath, cwd, pi, undefined, true);
 
 	// Import dispatchForFile dynamically to avoid circular deps
 	const { dispatchForFile } = await import("./dispatcher.js");
