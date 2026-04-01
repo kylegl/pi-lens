@@ -6,13 +6,12 @@
  *
  * Key features:
  * - Auto-detects formatters based on project config
- * - Runs multiple formatters concurrently via Effect.all
+ * - Runs multiple formatters concurrently with concurrency limits
  * - FileTime integration for safety
  * - Multiple formatters per file (e.g., biome + prettier both run)
  */
 
 import * as path from "node:path";
-import { Effect, pipe } from "effect";
 import { FileTime } from "./file-time.js";
 import {
 	clearFormatterCache,
@@ -21,6 +20,11 @@ import {
 	formatFile,
 	getFormattersForFile,
 } from "./formatters.js";
+
+// --- Configuration ---
+
+/** Maximum concurrent formatters to prevent resource contention */
+const DEFAULT_FORMATTER_CONCURRENCY = 2;
 
 // --- Types ---
 
@@ -56,7 +60,7 @@ export class FormatService {
 
 	/**
 	 * Format a file with all detected formatters
-	 * Runs formatters concurrently via Effect-TS
+	 * Runs formatters with limited concurrency to prevent resource contention
 	 */
 	async formatFile(
 		filePath: string,
@@ -102,8 +106,8 @@ export class FormatService {
 			};
 		}
 
-		// Run all formatters concurrently via Effect-TS
-		const results = await this.runFormattersConcurrently(
+		// Run formatters with limited concurrency
+		const results = await this.runFormattersWithConcurrency(
 			absolutePath,
 			formatters,
 		);
@@ -129,41 +133,55 @@ export class FormatService {
 	}
 
 	/**
-	 * Run formatters concurrently using Effect-TS
+	 * Run formatters with limited concurrency to prevent resource contention
+	 *
+	 * Formatters are I/O bound so we can run 2-3 concurrently, but not unlimited.
+	 * This prevents overwhelming the system when multiple formatters are configured.
 	 */
-	private async runFormattersConcurrently(
+	private async runFormattersWithConcurrency(
 		filePath: string,
 		formatters: FormatterInfo[],
+		concurrency = DEFAULT_FORMATTER_CONCURRENCY,
 	): Promise<FormatterResult[]> {
-		// Create Effect for each formatter
-		const effects = formatters.map((formatter) =>
-			Effect.tryPromise({
-				try: () => formatFile(filePath, formatter),
-				catch: (error): FormatterResult => ({
-					success: false,
-					changed: false,
-					error: error instanceof Error ? error.message : String(error),
+		const results: FormatterResult[] = [];
+
+		// Process in batches to limit concurrent formatters
+		for (let i = 0; i < formatters.length; i += concurrency) {
+			const batch = formatters.slice(i, i + concurrency);
+			const batchResults = await Promise.all(
+				batch.map(async (formatter) => {
+					try {
+						// Add timeout to each formatter individually
+						const timeoutMs = 30000;
+						const timeoutPromise = new Promise<FormatterResult>((_, reject) => {
+							setTimeout(
+								() =>
+									reject(
+										new Error(
+											`Formatter ${formatter.name} timed out after ${timeoutMs}ms`,
+										),
+									),
+								timeoutMs,
+							);
+						});
+
+						return await Promise.race([
+							formatFile(filePath, formatter),
+							timeoutPromise,
+						]);
+					} catch (error) {
+						return {
+							success: false,
+							changed: false,
+							error: error instanceof Error ? error.message : String(error),
+						};
+					}
 				}),
-			}),
-		);
+			);
+			results.push(...batchResults);
+		}
 
-		// Run all concurrently with Effect.all
-		const program = pipe(
-			Effect.all(effects, { concurrency: "unbounded" }),
-			Effect.timeout(30000), // 30s total timeout for all formatters
-			Effect.catchAll((error): Effect.Effect<FormatterResult[]> => {
-				console.error("[format] Concurrent formatting failed:", error);
-				return Effect.succeed(
-					formatters.map(() => ({
-						success: false,
-						changed: false,
-						error: "Timeout or concurrent execution failed",
-					})),
-				);
-			}),
-		);
-
-		return Effect.runPromise(program);
+		return results;
 	}
 
 	/**

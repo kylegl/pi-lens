@@ -2,6 +2,26 @@
 
 All notable changes to pi-lens will be documented in this file.
 
+## [3.1.0] - 2026-04-01
+
+### Changed
+- **Consolidated ast-grep runners** — Unified CLI and NAPI runners with shared rule set
+  - NAPI runner now primary for dispatch (100x faster than CLI spawn)
+  - Merged ts-slop-rules (21 files) into ast-grep-rules/slop-patterns.yml (33 patterns)
+  - Removed 20 duplicate rule files with conflicting IDs (e.g., `ts-jwt-no-verify` vs `jwt-no-verify`)
+  - Total: 104 unified rules (71 security/architecture + 33 slop patterns)
+  - CLI ast-grep kept only for `ast_grep_search` / `ast_grep_replace` tools
+
+### Fixed
+- **ast-grep-napi stability** — Fixed stack overflow crashes in AST traversal
+  - Added `_MAX_AST_DEPTH = 50` depth limit to `findByKind()` and `getAllNodes()`
+  - Added `_MAX_RULE_DEPTH = 5` recursion limit for structured rules
+  - Added `MAX_MATCHES_PER_RULE = 10` to prevent false positive explosions
+  - Added `MAX_TOTAL_DIAGNOSTICS = 50` to prevent output spam
+  - NAPI runner now safely handles deeply nested TypeScript files
+
+---
+
 ## [3.0.1] - 2026-03-31
 
 ### Changed

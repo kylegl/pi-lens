@@ -8,7 +8,7 @@
  */
 
 import { ensureTool } from "../../installer/index.js";
-import { safeSpawn } from "../../safe-spawn.js";
+import { safeSpawnAsync } from "../../safe-spawn.js";
 import type {
 	Diagnostic,
 	DispatchContext,
@@ -37,7 +37,7 @@ const pyrightRunner: RunnerDefinition = {
 		}
 
 		// Run pyright with JSON output (use venv-local or global command)
-		const result = safeSpawn(
+		const result = await safeSpawnAsync(
 			pyright.getCommand()!,
 			["--outputjson", ctx.filePath],
 			{

@@ -206,12 +206,11 @@ pi-lens uses a **dispatcher-runner architecture** for extensible multi-language 
 | **ruff** | Python | 10 | Warning | Python linting (delta-tracked) |
 | **oxlint** | TS/JS | 12 | Warning | Fast Rust-based JS/TS linter |
 | **tree-sitter** | TS/JS, Python | 14 | Mixed | AST-based structural analysis (17 patterns) |
-| **ast-grep-napi** | TS/JS | 15 | Warning | **100x faster** structural analysis |
+| **ast-grep-napi** | TS/JS | 15 | Warning | **Unified structural analysis** (104 rules) |
 | **type-safety** | TS | 20 | Mixed | Switch exhaustiveness (blocking), other (warning) |
 | **shellcheck** | Shell | 20 | Warning | Bash/sh/zsh/fish linting |
 | **python-slop** | Python | 25 | Warning | AI slop detection (~40 patterns) |
 | **spellcheck** | Markdown | 30 | Warning | Typo detection in docs |
-| **ast-grep** | Go, Rust, Python, etc. | 30 | Warning | Structural analysis via CLI (fallback for non-TS/JS) |
 | **similarity** | TS | 35 | Silent | Semantic duplicate detection (metrics only) |
 | **architect** | All | 40 | Warning | Architectural rule violations |
 | **go-vet** | Go | 50 | Warning | Go static analysis |
@@ -229,7 +228,7 @@ pi-lens uses a **dispatcher-runner architecture** for extensible multi-language 
 - **Warning** — Shown in `/lens-booboo`, not inline (noise reduction)
 - **Silent** — Tracked in metrics only, never shown
 
-**Disabled runners:** `ts-slop` (merged into `ast-grep-napi`)
+**Consolidated runners:** `ast-grep` (CLI) and `ts-slop` merged into `ast-grep-napi` — unified 104-rule set
 
 **Tree-sitter runner patterns** (priority 14, AST-based structural analysis):
 
@@ -243,7 +242,9 @@ Python (6 patterns):
 
 **Custom tree-sitter queries:** Add `.yml` files to `.pi-lens/rules/tree-sitter-queries/{typescript,python}/`
 
-**AI Slop Detection:** The `python-slop` runner (priority 25) detects low-quality patterns in Python code (~40 patterns). TypeScript/JavaScript slop detection is integrated into `ast-grep-napi` runner.
+**AI Slop Detection:** 
+- `python-slop` runner (priority 25): ~40 patterns for Python code quality
+- `ast-grep-napi` runner (priority 15): 33 slop patterns + 71 security/architecture rules for TypeScript/JavaScript
 
 ---
 

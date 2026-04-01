@@ -1,13 +1,21 @@
 /**
  * Effect-TS Service Infrastructure for pi-lens
- * 
+ *
  * Simplified implementation focusing on:
- * - Concurrent runner execution
- * - Timeout handling
+ * - Concurrent runner execution with resource limits
+ * - Timeout handling with proper process cleanup
  * - Error recovery
  */
 
 import { Effect } from "effect";
+
+// --- Configuration ---
+
+/** Maximum concurrent runner processes to prevent resource contention */
+const DEFAULT_CONCURRENCY = 3;
+
+/** Maximum concurrent formatters */
+const DEFAULT_FORMATTER_CONCURRENCY = 2;
 
 // --- Error Types ---
 
@@ -57,23 +65,30 @@ export interface ConcurrentRunnerResult {
 
 /**
  * Run multiple runners concurrently with Effect
- * 
+ *
  * Features:
- * - Parallel execution with Effect.all
+ * - Parallel execution with Effect.all (limited concurrency to prevent resource exhaustion)
  * - Per-runner timeout handling
  * - Graceful error recovery (individual failures don't stop others)
  * - Automatic resource cleanup
+ *
+ * Concurrency is limited to DEFAULT_CONCURRENCY (3) to prevent:
+ * - CPU thrashing from too many parallel processes
+ * - Memory exhaustion from large LSP initializations
+ * - File descriptor exhaustion
  */
 export function runRunnersConcurrent(
 	filePath: string,
 	runnerIds: string[],
 	runSingle: (filePath: string, runnerId: string) => Promise<RunnerResult>,
-	timeoutMs = 30_000
+	timeoutMs = 30_000,
+	concurrency = DEFAULT_CONCURRENCY,
 ): Effect.Effect<ConcurrentRunnerResult[], never, never> {
 	return Effect.gen(function* () {
-		const startTime = Date.now();
+		const _startTime = Date.now();
 
-		// Run all runners in parallel
+		// Run runners with limited concurrency
+		// This prevents resource contention when many linters are configured
 		const results = yield* Effect.all(
 			runnerIds.map((runnerId) =>
 				Effect.gen(function* () {
@@ -90,24 +105,55 @@ export function runRunnersConcurrent(
 								diagnostics: [],
 								durationMs: Date.now() - runnerStart,
 								error: String(err),
-							})
-						)
+							}),
+						),
 					);
 
 					const isError = "error" in result;
 
 					return {
 						runnerId,
-						status: isError ? "failure" as const : "success" as const,
+						status: isError ? ("failure" as const) : ("success" as const),
 						diagnostics: isError ? [] : result.diagnostics,
 						durationMs: isError ? result.durationMs : result.durationMs,
 						error: isError ? result.error : undefined,
 					};
-				})
+				}),
 			),
-			{ concurrency: "unbounded" }
+			{ concurrency }, // Limited concurrency to prevent resource exhaustion
 		);
 
+		return results;
+	});
+}
+
+/**
+ * Run multiple formatters concurrently with limited concurrency
+ *
+ * Formatters are typically I/O bound, so we can be slightly more aggressive
+ * than runners, but still limit to prevent overwhelming the system.
+ */
+export function runFormattersConcurrent<T>(
+	formatters: Array<() => Promise<T>>,
+	timeoutMs = 30_000,
+	concurrency = DEFAULT_FORMATTER_CONCURRENCY,
+): Effect.Effect<T[], never, never> {
+	return Effect.gen(function* () {
+		const results = yield* Effect.all(
+			formatters.map((formatter) =>
+				Effect.gen(function* () {
+					const result = yield* Effect.tryPromise({
+						try: () => formatter(),
+						catch: (err) => err,
+					}).pipe(
+						Effect.timeout(timeoutMs),
+						Effect.catchAll((err) => Effect.succeed(err as T)),
+					);
+					return result;
+				}),
+			),
+			{ concurrency },
+		);
 		return results;
 	});
 }
@@ -119,7 +165,7 @@ export function runRunnerWithTimeout(
 	filePath: string,
 	runnerId: string,
 	runSingle: (filePath: string, runnerId: string) => Promise<RunnerResult>,
-	timeoutMs = 30_000
+	timeoutMs = 30_000,
 ): Effect.Effect<RunnerResult, RunnerError | TimeoutError, never> {
 	return Effect.gen(function* () {
 		const startTime = Date.now();
@@ -132,7 +178,7 @@ export function runRunnerWithTimeout(
 			Effect.mapError((err) => {
 				if (err instanceof RunnerError) return err;
 				return new TimeoutError(`runner:${runnerId}`, timeoutMs);
-			})
+			}),
 		);
 
 		return {
@@ -148,7 +194,7 @@ export function runRunnerWithTimeout(
  * Execute Effect and get result
  */
 export function executeEffect<T>(
-	effect: Effect.Effect<T, never, never>
+	effect: Effect.Effect<T, never, never>,
 ): Promise<T> {
 	return Effect.runPromise(effect);
 }
@@ -158,10 +204,10 @@ export function executeEffect<T>(
  */
 export function executeEffectWithError<T, E>(
 	effect: Effect.Effect<T, E, never>,
-	onError: (err: E) => T
+	onError: (err: E) => T,
 ): Promise<T> {
 	return Effect.runPromise(
-		Effect.catchAll(effect, (err) => Effect.succeed(onError(err)))
+		Effect.catchAll(effect, (err) => Effect.succeed(onError(err))),
 	);
 }
 

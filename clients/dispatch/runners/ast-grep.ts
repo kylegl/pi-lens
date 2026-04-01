@@ -7,10 +7,9 @@
  * - security anti-patterns
  */
 
-import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { safeSpawn } from "../../safe-spawn.js";
+import { safeSpawnAsync } from "../../safe-spawn.js";
 import type {
 	Diagnostic,
 	DispatchContext,
@@ -19,13 +18,16 @@ import type {
 } from "../types.js";
 
 // Simple YAML fix: field extractor
-function extractFixFromRule(ruleId: string, ruleDir: string): string | undefined {
+function extractFixFromRule(
+	ruleId: string,
+	ruleDir: string,
+): string | undefined {
 	try {
 		const rulePath = `${ruleDir}/${ruleId}.yml`;
 		if (!fs.existsSync(rulePath)) return undefined;
-		
+
 		const content = fs.readFileSync(rulePath, "utf-8");
-		const fixMatch = content.match(/^fix:\s*\|?([\s\S]*?)(?=^\w|^rule:|\Z)/m);
+		const fixMatch = content.match(/^fix:\s*\|?([\s\S]*?)(?=^\w|^rule:|Z)/m);
 		if (fixMatch) {
 			return fixMatch[1]
 				.split("\n")
@@ -48,7 +50,7 @@ const astGrepRunner: RunnerDefinition = {
 
 	async run(ctx: DispatchContext): Promise<RunnerResult> {
 		// Check if ast-grep is available (use npx for local installs)
-		const check = safeSpawn("npx", ["sg", "--version"], {
+		const check = await safeSpawnAsync("npx", ["sg", "--version"], {
 			timeout: 5000,
 		});
 
@@ -65,7 +67,7 @@ const astGrepRunner: RunnerDefinition = {
 		// Run ast-grep scan on the file (use npx for local installs)
 		const args = ["sg", "scan", "--config", configPath, "--json", ctx.filePath];
 
-		const result = safeSpawn("npx", args, {
+		const result = await safeSpawnAsync("npx", args, {
 			timeout: 30000,
 		});
 
@@ -119,14 +121,14 @@ function parseAstGrepOutput(
 	const ruleDir = _configPath
 		? path.dirname(_configPath).replace("/.sgconfig.yml", "/rules")
 		: path.join(process.cwd(), "rules", "ast-grep-rules", "rules");
-	
+
 	try {
 		const parsed = JSON.parse(raw);
 		if (Array.isArray(parsed)) {
 			for (const item of parsed) {
 				const line = item.range?.start?.line || 1;
 				const ruleId = item.rule || "unknown";
-				
+
 				// Build message with inline fix suggestion
 				let message = item.message || item.lines || "";
 				let fixSuggestion: string | undefined;
@@ -143,9 +145,8 @@ function parseAstGrepOutput(
 					// Try to get fix: from rule YAML
 					const ruleFix = extractFixFromRule(ruleId, ruleDir);
 					if (ruleFix) {
-						const fixPreview = ruleFix.length > 60
-							? `${ruleFix.substring(0, 60)}...`
-							: ruleFix;
+						const fixPreview =
+							ruleFix.length > 60 ? `${ruleFix.substring(0, 60)}...` : ruleFix;
 						message += `\n💡 Suggested fix:\n${fixPreview}`;
 						fixSuggestion = ruleFix;
 					}

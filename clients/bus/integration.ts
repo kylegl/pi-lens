@@ -1,6 +1,6 @@
 /**
  * Bus Integration for pi-lens
- * 
+ *
  * Connects the event bus system to the existing pi-lens architecture.
  * This provides:
  * - Event aggregation for diagnostic collection
@@ -8,19 +8,16 @@
  * - Hook integration for tool_result handler
  */
 
-import {
-	DiagnosticFound,
-	RunnerStarted,
-	RunnerCompleted,
-	ReportReady,
-	FileModified,
-	SessionStarted,
-	TurnEnded,
-	DiagnosticAggregator,
-	type Diagnostic,
-} from "./events.js";
-import { subscribe, enableDebug } from "./bus.js";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { enableDebug } from "./bus.js";
+import {
+	type Diagnostic,
+	DiagnosticAggregator,
+	FileModified,
+	ReportReady,
+	RunnerCompleted,
+	RunnerStarted,
+} from "./events.js";
 
 // --- Integration State ---
 
@@ -46,7 +43,10 @@ let unsubscribers: Array<() => void> = [];
  * Initialize the bus integration
  * Call this from session_start handler
  */
-export function initBusIntegration(pi: ExtensionAPI, options?: { debug?: boolean }): void {
+export function initBusIntegration(
+	_pi: ExtensionAPI,
+	options?: { debug?: boolean },
+): void {
 	if (state.isEnabled) return; // Already initialized
 
 	if (options?.debug) {
@@ -63,24 +63,29 @@ export function initBusIntegration(pi: ExtensionAPI, options?: { debug?: boolean
 	});
 
 	const unsubRunnerCompleted = RunnerCompleted.subscribe((event) => {
-		const { runnerId, filePath, durationMs, diagnosticCount } = event.properties;
+		const { runnerId, filePath, durationMs, diagnosticCount } =
+			event.properties;
 		state.runnerInProgress.delete(`${runnerId}:${filePath}`);
 
-		// Log slow runners in debug mode
+		// Log slow runners in debug mode only
 		if (options?.debug && durationMs > 5000) {
-			console.error(`[bus] Slow runner: ${runnerId} took ${durationMs}ms for ${filePath}`);
+			console.error(
+				`[bus] Slow runner: ${runnerId} took ${durationMs}ms for ${filePath}`,
+			);
 		}
 
-		// Log runners that found issues
-		if (diagnosticCount > 0) {
-			console.error(`[bus] ${runnerId} found ${diagnosticCount} issues in ${filePath}`);
+		// Log runners that found excessive issues (indicates rule misconfiguration)
+		if (diagnosticCount > 100) {
+			console.error(
+				`[bus] ${runnerId} found ${diagnosticCount} issues in ${filePath} (rules may be too broad)`,
+			);
 		}
 	});
 
 	// Cache reports for quick retrieval
 	const unsubReportReady = ReportReady.subscribe((event) => {
 		const { filePath, report, durationMs } = event.properties;
-		
+
 		// Store the report
 		state.lastReport.set(filePath, {
 			output: formatReport(report, durationMs),
@@ -91,10 +96,10 @@ export function initBusIntegration(pi: ExtensionAPI, options?: { debug?: boolean
 	// Track file modifications to clear stale data
 	const unsubFileModified = FileModified.subscribe((event) => {
 		const { filePath } = event.properties;
-		
+
 		// Clear cached report for modified file
 		state.lastReport.delete(filePath);
-		
+
 		// Clear diagnostics aggregator for this file (will be repopulated)
 		state.aggregator.clear(filePath);
 	});
@@ -139,7 +144,12 @@ export function shutdownBusIntegration(): void {
 // --- Helper Functions ---
 
 function formatReport(
-	report: { blockers: Diagnostic[]; warnings: Diagnostic[]; fixed: Diagnostic[]; silent: Diagnostic[] },
+	report: {
+		blockers: Diagnostic[];
+		warnings: Diagnostic[];
+		fixed: Diagnostic[];
+		silent: Diagnostic[];
+	},
 	durationMs: number,
 ): string {
 	const lines: string[] = [];
@@ -198,7 +208,10 @@ export function hasRunnersInProgress(filePath?: string): boolean {
 /**
  * Get list of runners in progress
  */
-export function getRunnersInProgress(): Array<{ runnerId: string; filePath: string }> {
+export function getRunnersInProgress(): Array<{
+	runnerId: string;
+	filePath: string;
+}> {
 	return Array.from(state.runnerInProgress).map((key) => {
 		const [runnerId, filePath] = key.split(":");
 		return { runnerId, filePath };

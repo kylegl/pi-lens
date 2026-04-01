@@ -4,7 +4,7 @@
  * Requires: @biomejs/biome (npm install -D @biomejs/biome)
  */
 
-import { safeSpawn } from "../../safe-spawn.js";
+import { safeSpawnAsync } from "../../safe-spawn.js";
 import type {
 	DispatchContext,
 	RunnerDefinition,
@@ -26,7 +26,7 @@ const biomeRunner: RunnerDefinition = {
 
 		if (!cmd || !biome.isAvailable(ctx.cwd)) {
 			// Try npx as fallback
-			const npxCheck = safeSpawn("npx", ["biome", "--version"], {
+			const npxCheck = await safeSpawnAsync("npx", ["biome", "--version"], {
 				timeout: 5000,
 			});
 			if (!npxCheck.error && npxCheck.status === 0) {
@@ -46,7 +46,7 @@ const biomeRunner: RunnerDefinition = {
 			? ["biome", "check", ctx.filePath]
 			: ["check", ctx.filePath];
 
-		const result = safeSpawn(cmd, args, {
+		const result = await safeSpawnAsync(cmd, args, {
 			timeout: 30000,
 		});
 

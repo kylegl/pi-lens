@@ -6,7 +6,7 @@
  */
 
 import { ensureTool } from "../../installer/index.js";
-import { safeSpawn } from "../../safe-spawn.js";
+import { safeSpawnAsync } from "../../safe-spawn.js";
 import { stripAnsi } from "../../sanitize.js";
 import type {
 	DispatchContext,
@@ -41,7 +41,7 @@ const ruffRunner: RunnerDefinition = {
 		// Fixes should be applied through explicit commands or user edits.
 		const args = ["check", ctx.filePath];
 
-		const result = safeSpawn(ruff.getCommand()!, args, {
+		const result = await safeSpawnAsync(ruff.getCommand()!, args, {
 			timeout: 30000,
 		});
 
