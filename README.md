@@ -206,7 +206,7 @@ pi-lens uses a **dispatcher-runner architecture** for extensible multi-language 
 | **ruff** | Python | 10 | Warning | Python linting (delta-tracked) |
 | **oxlint** | TS/JS | 12 | Warning | Fast Rust-based JS/TS linter |
 | **tree-sitter** | TS/JS, Python | 14 | Mixed | AST-based structural analysis (17 patterns) |
-| **ast-grep-napi** | TS/JS | 15 | Warning | **Unified structural analysis** (104 rules) |
+| **ast-grep-napi** | TS/JS | 15 | Warning | **Unified structural analysis** (104 rules) — ⚠️ Temporarily disabled for debugging |
 | **type-safety** | TS | 20 | Mixed | Switch exhaustiveness (blocking), other (warning) |
 | **shellcheck** | Shell | 20 | Warning | Bash/sh/zsh/fish linting |
 | **python-slop** | Python | 25 | Warning | AI slop detection (~40 patterns) |
