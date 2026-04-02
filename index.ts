@@ -800,269 +800,281 @@ export default function (pi: ExtensionAPI) {
 	// --- Events ---
 
 	pi.on("session_start", async (_event, ctx) => {
-		_verbose = !!pi.getFlag("lens-verbose");
-		dbg("session_start fired");
-
-		// Reset session state
-		metricsClient.reset();
-		complexityBaselines.clear();
-		resetDispatchBaselines();
-		cachedProjectIndex = null;
-
-		// Reset LSP service so the new session starts with fresh diagnostics.
-		// Without this, stale cascade errors from a previous session persist
-		// if the extension module stayed hot between reloads.
-		if (pi.getFlag("lens-lsp")) {
-			resetLSPService();
-			dbg("session_start: LSP service reset");
-		}
-
-		// Log available tools
-		const tools: string[] = [];
-		tools.push("TypeScript LSP"); // Always available
-		if (biomeClient.isAvailable()) tools.push("Biome");
-		if (astGrepClient.isAvailable()) tools.push("ast-grep");
-		if (ruffClient.isAvailable()) tools.push("Ruff");
-		if (knipClient.isAvailable()) tools.push("Knip");
-		if (depChecker.isAvailable()) tools.push("Madge");
-		if (jscpdClient.isAvailable()) tools.push("jscpd");
-		if (typeCoverageClient.isAvailable()) tools.push("type-coverage");
-
-		log(`Active tools: ${tools.join(", ")}`);
-		dbg(`session_start tools: ${tools.join(", ")}`);
-
-		// Clean up stale TypeScript build caches before LSP starts.
-		// tsconfig.tsbuildinfo caches the full file list from the last build.
-		// If files have been deleted since then, the LSP reads the stale list
-		// and reports phantom "Cannot find module" cascade errors for files
-		// the agent never touched.
-		if (pi.getFlag("lens-lsp")) {
-			const cleaned = cleanStaleTsBuildInfo(ctx.cwd ?? process.cwd());
-			if (cleaned.length > 0) {
-				ctx.ui.notify(
-					`🧹 Deleted stale TypeScript build cache (${cleaned.map((f) => path.basename(f)).join(", ")}) — phantom errors suppressed.`,
-					"info",
-				);
-				dbg(`session_start: cleaned stale tsbuildinfo: ${cleaned.join(", ")}`);
-			}
-		}
-
-		// Pre-install TypeScript LSP if --lens-lsp flag is set (avoid delay on first use)
-		if (pi.getFlag("lens-lsp")) {
-			dbg("session_start: pre-installing TypeScript LSP...");
-			// Fire-and-forget: don't block session start, just warm up the cache
-			ensureTool("typescript-language-server")
-				.then((path) => {
-					if (path) {
-						dbg(`session_start: TypeScript LSP ready at ${path}`);
-					} else {
-						console.error("[lens] TypeScript LSP installation failed");
-					}
-				})
-				.catch((err) => {
-					console.error("[lens] TypeScript LSP pre-install error:", err);
-				});
-		}
-
-		const cwd = ctx.cwd ?? process.cwd();
-		projectRoot = cwd; // Module-level for architect client
-		dbg(`session_start cwd: ${cwd}`);
-
-		// Load architect rules if present
-		const hasArchitectRules = architectClient.loadConfig(cwd);
-		if (hasArchitectRules) tools.push("Architect rules");
-
-		// Log test runner if detected
-		const detectedRunner = testRunnerClient.detectRunner(cwd);
-		if (detectedRunner) {
-			tools.push(`Test runner (${detectedRunner.runner})`);
-		}
-		if (goClient.isGoAvailable()) tools.push("Go (go vet)");
-		if (rustClient.isAvailable()) tools.push("Rust (cargo)");
-		log(`Active tools: ${tools.join(", ")}`);
-		dbg(`session_start tools: ${tools.join(", ")}`);
-
-		const parts: string[] = [];
-
-		// --- Error ownership reminder ---
-		// Shown on every session start to encourage fixing existing errors
-		parts.push(
-			"📌 Remember: If you find ANY errors (test failures, compile errors, lint issues) in this codebase, fix them — even if you didn't cause them. Don't skip errors as 'not my fault'.",
-		);
-
-		// Scan for project-specific rules (.claude/rules, .agents/rules, CLAUDE.md, etc.)
-		projectRulesScan = scanProjectRules(cwd);
-		if (projectRulesScan.hasCustomRules) {
-			const ruleCount = projectRulesScan.rules.length;
-			const sources = [...new Set(projectRulesScan.rules.map((r) => r.source))];
-			dbg(
-				`session_start: found ${ruleCount} project rule(s) from ${sources.join(", ")}`,
-			);
-			parts.push(
-				`📋 Project rules found: ${ruleCount} file(s) in ${sources.join(", ")}. These apply alongside pi-lens defaults.`,
-			);
-		} else {
-			dbg("session_start: no project rules found");
-		}
-
-		// TODO/FIXME scan — fast, no deps
-		const todoResult = todoScanner.scanDirectory(cwd);
-		const todoReport = todoScanner.formatResult(todoResult);
-		dbg(`session_start TODO scan: ${todoResult.items.length} items`);
-		if (todoReport) parts.push(todoReport);
-
-		// Dead code scan — use cache if fresh, auto-install if needed
-		if (await knipClient.ensureAvailable()) {
-			const cached = cacheManager.readCache<ReturnType<KnipClient["analyze"]>>(
-				"knip",
-				cwd,
-			);
-			if (cached) {
-				dbg(
-					`session_start Knip: cache hit (${Math.round((Date.now() - new Date(cached.meta.timestamp).getTime()) / 1000)}s ago)`,
-				);
-				const knipReport = knipClient.formatResult(cached.data);
-				if (knipReport) parts.push(knipReport);
-			} else {
-				const startMs = Date.now();
-				const knipResult = knipClient.analyze(cwd);
-				cacheManager.writeCache("knip", knipResult, cwd, {
-					scanDurationMs: Date.now() - startMs,
-				});
-				const knipReport = knipClient.formatResult(knipResult);
-				dbg(`session_start Knip scan done`);
-				if (knipReport) parts.push(knipReport);
-			}
-		} else {
-			dbg(`session_start Knip: not available`);
-		}
-
-		// Duplicate code detection — use cache if fresh, auto-install if needed
-		if (await jscpdClient.ensureAvailable()) {
-			const cached = cacheManager.readCache<ReturnType<JscpdClient["scan"]>>(
-				"jscpd",
-				cwd,
-			);
-			if (cached) {
-				dbg(`session_start jscpd: cache hit`);
-				_cachedJscpdClones = cached.data.clones;
-				const jscpdReport = jscpdClient.formatResult(cached.data);
-				if (jscpdReport) parts.push(jscpdReport);
-			} else {
-				const startMs = Date.now();
-				const jscpdResult = jscpdClient.scan(cwd);
-				_cachedJscpdClones = jscpdResult.clones;
-				cacheManager.writeCache("jscpd", jscpdResult, cwd, {
-					scanDurationMs: Date.now() - startMs,
-				});
-				const jscpdReport = jscpdClient.formatResult(jscpdResult);
-				dbg(`session_start jscpd scan done`);
-				if (jscpdReport) parts.push(jscpdReport);
-			}
-		} else {
-			dbg(`session_start jscpd: not available`);
-		}
-
-		// Note: type-coverage runs on-demand via /lens-booboo only (not at session_start)
-
-		// Scan for exported functions (cached for duplicate detection on write)
-		if (await astGrepClient.ensureAvailable()) {
-			const exports = await astGrepClient.scanExports(cwd, "typescript");
-			dbg(`session_start exports scan: ${exports.size} functions found`);
-			for (const [name, file] of exports) {
-				cachedExports.set(name, file);
-			}
-		}
-
-		// Build similarity index for pre-write structural duplicate detection.
-		// Uses the same source files as the exports scan. The index is ~50ms
-		// to query but seconds to build, so we do it once at session start.
 		try {
-			const existing = await loadIndex(cwd);
-			if (existing && existing.entries.size > 0) {
-				cachedProjectIndex = existing;
-				dbg(
-					`session_start: loaded project index from disk (${existing.entries.size} entries)`,
-				);
-			} else {
-				const sourceFiles = getSourceFiles(cwd, true);
-				const tsFiles = sourceFiles.filter(
-					(f) => f.endsWith(".ts") || f.endsWith(".tsx"),
-				);
-				if (tsFiles.length > 0 && tsFiles.length <= 500) {
-					cachedProjectIndex = await buildProjectIndex(cwd, tsFiles);
-					dbg(
-						`session_start: built project index (${cachedProjectIndex.entries.size} entries from ${tsFiles.length} files)`,
+			_verbose = !!pi.getFlag("lens-verbose");
+			dbg("session_start fired");
+
+			// Reset session state
+			metricsClient.reset();
+			complexityBaselines.clear();
+			resetDispatchBaselines();
+			cachedProjectIndex = null;
+
+			// Reset LSP service so the new session starts with fresh diagnostics.
+			// Without this, stale cascade errors from a previous session persist
+			// if the extension module stayed hot between reloads.
+			if (pi.getFlag("lens-lsp")) {
+				resetLSPService();
+				dbg("session_start: LSP service reset");
+			}
+
+			// Log available tools
+			const tools: string[] = [];
+			tools.push("TypeScript LSP"); // Always available
+			if (biomeClient.isAvailable()) tools.push("Biome");
+			if (astGrepClient.isAvailable()) tools.push("ast-grep");
+			if (ruffClient.isAvailable()) tools.push("Ruff");
+			if (knipClient.isAvailable()) tools.push("Knip");
+			if (depChecker.isAvailable()) tools.push("Madge");
+			if (jscpdClient.isAvailable()) tools.push("jscpd");
+			if (typeCoverageClient.isAvailable()) tools.push("type-coverage");
+
+			log(`Active tools: ${tools.join(", ")}`);
+			dbg(`session_start tools: ${tools.join(", ")}`);
+
+			// Clean up stale TypeScript build caches before LSP starts.
+			// tsconfig.tsbuildinfo caches the full file list from the last build.
+			// If files have been deleted since then, the LSP reads the stale list
+			// and reports phantom "Cannot find module" cascade errors for files
+			// the agent never touched.
+			if (pi.getFlag("lens-lsp")) {
+				const cleaned = cleanStaleTsBuildInfo(ctx.cwd ?? process.cwd());
+				if (cleaned.length > 0) {
+					ctx.ui.notify(
+						`🧹 Deleted stale TypeScript build cache (${cleaned.map((f) => path.basename(f)).join(", ")}) — phantom errors suppressed.`,
+						"info",
 					);
-				} else {
 					dbg(
-						`session_start: skipped project index (${tsFiles.length} files — ${tsFiles.length === 0 ? "none" : "too many"})`,
+						`session_start: cleaned stale tsbuildinfo: ${cleaned.join(", ")}`,
 					);
 				}
 			}
-		} catch (err) {
-			dbg(`session_start: project index build failed: ${err}`);
-		}
 
-		dbg(
-			`session_start: scans complete (${parts.length} part(s)), cached for commands`,
-		);
-
-		// Output the assembled parts to user
-		if (parts.length > 0) {
-			for (const part of parts) {
-				ctx.ui.notify(part, "info");
-			}
-		}
-
-		// --- Error debt: check if tests ran since last session ---
-		// If files were modified in previous turn, run tests and check for regression
-		const errorDebtEnabled = pi.getFlag("error-debt");
-		const pendingDebt = cacheManager.readCache<{
-			pendingCheck: boolean;
-			baselineTestsPassed: boolean;
-		}>("errorDebt", cwd);
-
-		if (errorDebtEnabled && detectedRunner && pendingDebt?.data?.pendingCheck) {
-			dbg("session_start: running pending error debt check");
-			const testResult = testRunnerClient.runTestFile(
-				".",
-				cwd,
-				detectedRunner.runner,
-				detectedRunner.config,
-			);
-			const testsPassed = testResult.failed === 0 && !testResult.error;
-			const baselinePassed = pendingDebt.data.baselineTestsPassed;
-
-			// Regression detected!
-			if (baselinePassed && !testsPassed) {
-				const msg = `🔴 ERROR DEBT: Tests were passing but now failing (${testResult.failed} failure(s)). Fix before continuing.`;
-				dbg(`session_start ERROR DEBT: ${msg}`);
-				parts.push(msg);
+			// Pre-install TypeScript LSP if --lens-lsp flag is set (avoid delay on first use)
+			if (pi.getFlag("lens-lsp")) {
+				dbg("session_start: pre-installing TypeScript LSP...");
+				// Fire-and-forget: don't block session start, just warm up the cache
+				ensureTool("typescript-language-server")
+					.then((path) => {
+						if (path) {
+							dbg(`session_start: TypeScript LSP ready at ${path}`);
+						} else {
+							console.error("[lens] TypeScript LSP installation failed");
+						}
+					})
+					.catch((err) => {
+						console.error("[lens] TypeScript LSP pre-install error:", err);
+					});
 			}
 
-			// Update baseline
-			errorDebtBaseline = {
-				testsPassed: testsPassed,
-				buildPassed: true,
-			};
-		} else if (errorDebtEnabled && detectedRunner) {
-			// No pending check - establish fresh baseline
-			dbg("session_start: establishing fresh error debt baseline");
-			const testResult = testRunnerClient.runTestFile(
-				".",
-				cwd,
-				detectedRunner.runner,
-				detectedRunner.config,
+			const cwd = ctx.cwd ?? process.cwd();
+			projectRoot = cwd; // Module-level for architect client
+			dbg(`session_start cwd: ${cwd}`);
+
+			// Load architect rules if present
+			const hasArchitectRules = architectClient.loadConfig(cwd);
+			if (hasArchitectRules) tools.push("Architect rules");
+
+			// Log test runner if detected
+			const detectedRunner = testRunnerClient.detectRunner(cwd);
+			if (detectedRunner) {
+				tools.push(`Test runner (${detectedRunner.runner})`);
+			}
+			if (goClient.isGoAvailable()) tools.push("Go (go vet)");
+			if (rustClient.isAvailable()) tools.push("Rust (cargo)");
+			log(`Active tools: ${tools.join(", ")}`);
+			dbg(`session_start tools: ${tools.join(", ")}`);
+
+			const parts: string[] = [];
+
+			// --- Error ownership reminder ---
+			// Shown on every session start to encourage fixing existing errors
+			parts.push(
+				"📌 Remember: If you find ANY errors (test failures, compile errors, lint issues) in this codebase, fix them — even if you didn't cause them. Don't skip errors as 'not my fault'.",
 			);
-			const testsPassed = testResult.failed === 0 && !testResult.error;
-			errorDebtBaseline = {
-				testsPassed: testsPassed,
-				buildPassed: true,
-			};
+
+			// Scan for project-specific rules (.claude/rules, .agents/rules, CLAUDE.md, etc.)
+			projectRulesScan = scanProjectRules(cwd);
+			if (projectRulesScan.hasCustomRules) {
+				const ruleCount = projectRulesScan.rules.length;
+				const sources = [
+					...new Set(projectRulesScan.rules.map((r) => r.source)),
+				];
+				dbg(
+					`session_start: found ${ruleCount} project rule(s) from ${sources.join(", ")}`,
+				);
+				parts.push(
+					`📋 Project rules found: ${ruleCount} file(s) in ${sources.join(", ")}. These apply alongside pi-lens defaults.`,
+				);
+			} else {
+				dbg("session_start: no project rules found");
+			}
+
+			// TODO/FIXME scan — fast, no deps
+			const todoResult = todoScanner.scanDirectory(cwd);
+			const todoReport = todoScanner.formatResult(todoResult);
+			dbg(`session_start TODO scan: ${todoResult.items.length} items`);
+			if (todoReport) parts.push(todoReport);
+
+			// Dead code scan — use cache if fresh, auto-install if needed
+			if (await knipClient.ensureAvailable()) {
+				const cached = cacheManager.readCache<
+					ReturnType<KnipClient["analyze"]>
+				>("knip", cwd);
+				if (cached) {
+					dbg(
+						`session_start Knip: cache hit (${Math.round((Date.now() - new Date(cached.meta.timestamp).getTime()) / 1000)}s ago)`,
+					);
+					const knipReport = knipClient.formatResult(cached.data);
+					if (knipReport) parts.push(knipReport);
+				} else {
+					const startMs = Date.now();
+					const knipResult = knipClient.analyze(cwd);
+					cacheManager.writeCache("knip", knipResult, cwd, {
+						scanDurationMs: Date.now() - startMs,
+					});
+					const knipReport = knipClient.formatResult(knipResult);
+					dbg(`session_start Knip scan done`);
+					if (knipReport) parts.push(knipReport);
+				}
+			} else {
+				dbg(`session_start Knip: not available`);
+			}
+
+			// Duplicate code detection — use cache if fresh, auto-install if needed
+			if (await jscpdClient.ensureAvailable()) {
+				const cached = cacheManager.readCache<ReturnType<JscpdClient["scan"]>>(
+					"jscpd",
+					cwd,
+				);
+				if (cached) {
+					dbg(`session_start jscpd: cache hit`);
+					_cachedJscpdClones = cached.data.clones;
+					const jscpdReport = jscpdClient.formatResult(cached.data);
+					if (jscpdReport) parts.push(jscpdReport);
+				} else {
+					const startMs = Date.now();
+					const jscpdResult = jscpdClient.scan(cwd);
+					_cachedJscpdClones = jscpdResult.clones;
+					cacheManager.writeCache("jscpd", jscpdResult, cwd, {
+						scanDurationMs: Date.now() - startMs,
+					});
+					const jscpdReport = jscpdClient.formatResult(jscpdResult);
+					dbg(`session_start jscpd scan done`);
+					if (jscpdReport) parts.push(jscpdReport);
+				}
+			} else {
+				dbg(`session_start jscpd: not available`);
+			}
+
+			// Note: type-coverage runs on-demand via /lens-booboo only (not at session_start)
+
+			// Scan for exported functions (cached for duplicate detection on write)
+			if (await astGrepClient.ensureAvailable()) {
+				const exports = await astGrepClient.scanExports(cwd, "typescript");
+				dbg(`session_start exports scan: ${exports.size} functions found`);
+				for (const [name, file] of exports) {
+					cachedExports.set(name, file);
+				}
+			}
+
+			// Build similarity index for pre-write structural duplicate detection.
+			// Uses the same source files as the exports scan. The index is ~50ms
+			// to query but seconds to build, so we do it once at session start.
+			try {
+				const existing = await loadIndex(cwd);
+				if (existing && existing.entries.size > 0) {
+					cachedProjectIndex = existing;
+					dbg(
+						`session_start: loaded project index from disk (${existing.entries.size} entries)`,
+					);
+				} else {
+					const sourceFiles = getSourceFiles(cwd, true);
+					const tsFiles = sourceFiles.filter(
+						(f) => f.endsWith(".ts") || f.endsWith(".tsx"),
+					);
+					if (tsFiles.length > 0 && tsFiles.length <= 500) {
+						cachedProjectIndex = await buildProjectIndex(cwd, tsFiles);
+						dbg(
+							`session_start: built project index (${cachedProjectIndex.entries.size} entries from ${tsFiles.length} files)`,
+						);
+					} else {
+						dbg(
+							`session_start: skipped project index (${tsFiles.length} files — ${tsFiles.length === 0 ? "none" : "too many"})`,
+						);
+					}
+				}
+			} catch (err) {
+				dbg(`session_start: project index build failed: ${err}`);
+			}
+
 			dbg(
-				`session_start error debt baseline: testsPassed=${errorDebtBaseline.testsPassed}`,
+				`session_start: scans complete (${parts.length} part(s)), cached for commands`,
 			);
+
+			// Output the assembled parts to user
+			if (parts.length > 0) {
+				for (const part of parts) {
+					ctx.ui.notify(part, "info");
+				}
+			}
+
+			// --- Error debt: check if tests ran since last session ---
+			// If files were modified in previous turn, run tests and check for regression
+			const errorDebtEnabled = pi.getFlag("error-debt");
+			const pendingDebt = cacheManager.readCache<{
+				pendingCheck: boolean;
+				baselineTestsPassed: boolean;
+			}>("errorDebt", cwd);
+
+			if (
+				errorDebtEnabled &&
+				detectedRunner &&
+				pendingDebt?.data?.pendingCheck
+			) {
+				dbg("session_start: running pending error debt check");
+				const testResult = testRunnerClient.runTestFile(
+					".",
+					cwd,
+					detectedRunner.runner,
+					detectedRunner.config,
+				);
+				const testsPassed = testResult.failed === 0 && !testResult.error;
+				const baselinePassed = pendingDebt.data.baselineTestsPassed;
+
+				// Regression detected!
+				if (baselinePassed && !testsPassed) {
+					const msg = `🔴 ERROR DEBT: Tests were passing but now failing (${testResult.failed} failure(s)). Fix before continuing.`;
+					dbg(`session_start ERROR DEBT: ${msg}`);
+					parts.push(msg);
+				}
+
+				// Update baseline
+				errorDebtBaseline = {
+					testsPassed: testsPassed,
+					buildPassed: true,
+				};
+			} else if (errorDebtEnabled && detectedRunner) {
+				// No pending check - establish fresh baseline
+				dbg("session_start: establishing fresh error debt baseline");
+				const testResult = testRunnerClient.runTestFile(
+					".",
+					cwd,
+					detectedRunner.runner,
+					detectedRunner.config,
+				);
+				const testsPassed = testResult.failed === 0 && !testResult.error;
+				errorDebtBaseline = {
+					testsPassed: testsPassed,
+					buildPassed: true,
+				};
+				dbg(
+					`session_start error debt baseline: testsPassed=${errorDebtBaseline.testsPassed}`,
+				);
+			}
+		} catch (sessionErr) {
+			dbg(`session_start crashed: ${sessionErr}`);
+			dbg(`session_start crash stack: ${(sessionErr as Error).stack}`);
 		}
 	});
 
@@ -1273,23 +1285,30 @@ export default function (pi: ExtensionAPI) {
 		});
 		dbg(`tool_result fired for: ${filePath} (turn_state: ${turnStateMs}ms)`);
 
-		const result = await runPipeline(
-			{
-				filePath,
-				cwd: projectRoot,
-				toolName: event.toolName,
-				getFlag: (name: string) => pi.getFlag(name),
-				dbg,
-			},
-			{
-				biomeClient,
-				ruffClient,
-				testRunnerClient,
-				metricsClient,
-				getFormatService,
-				fixedThisTurn,
-			},
-		);
+		let result: { output: string; isError?: boolean };
+		try {
+			result = await runPipeline(
+				{
+					filePath,
+					cwd: projectRoot,
+					toolName: event.toolName,
+					getFlag: (name: string) => pi.getFlag(name),
+					dbg,
+				},
+				{
+					biomeClient,
+					ruffClient,
+					testRunnerClient,
+					metricsClient,
+					getFormatService,
+					fixedThisTurn,
+				},
+			);
+		} catch (pipelineErr) {
+			dbg(`runPipeline crashed: ${pipelineErr}`);
+			dbg(`runPipeline crash stack: ${(pipelineErr as Error).stack}`);
+			return;
+		}
 
 		// Secrets found — block immediately
 		if (result.isError) {
@@ -1335,123 +1354,130 @@ export default function (pi: ExtensionAPI) {
 
 	// --- Turn end: batch jscpd/madge on collected files, then clear state ---
 	pi.on("turn_end", async (_event, ctx) => {
-		const cwd = ctx.cwd ?? process.cwd();
-		const turnState = cacheManager.readTurnState(cwd);
-		const files = Object.keys(turnState.files);
+		try {
+			const cwd = ctx.cwd ?? process.cwd();
+			const turnState = cacheManager.readTurnState(cwd);
+			const files = Object.keys(turnState.files);
 
-		if (files.length === 0) return;
+			if (files.length === 0) return;
 
-		dbg(
-			`turn_end: ${files.length} file(s) modified, cycles: ${turnState.turnCycles}/${turnState.maxCycles}`,
-		);
+			dbg(
+				`turn_end: ${files.length} file(s) modified, cycles: ${turnState.turnCycles}/${turnState.maxCycles}`,
+			);
 
-		// Max cycles guard — force through after N turns with unresolved issues
-		if (cacheManager.isMaxCyclesExceeded(cwd)) {
-			dbg("turn_end: max cycles exceeded, clearing state and forcing through");
-			cacheManager.clearTurnState(cwd);
-			return;
-		}
-
-		const parts: string[] = [];
-
-		// jscpd: scan modified files, filter results to modified line ranges
-		if (jscpdClient.isAvailable()) {
-			const jscpdFiles = cacheManager.getFilesForJscpd(cwd);
-			if (jscpdFiles.length > 0) {
-				dbg(`turn_end: jscpd scanning ${jscpdFiles.length} file(s)`);
-				// Use full scan then filter — jscpd doesn't support per-file scanning
-				const result = jscpdClient.scan(cwd);
-				// Filter clones to only those intersecting modified ranges
-				const jscpdFileSet = new Set(
-					jscpdFiles.map((f) => path.resolve(cwd, f)),
-				);
-				const filtered = result.clones.filter((clone) => {
-					const resolvedA = path.resolve(clone.fileA);
-					if (!jscpdFileSet.has(resolvedA)) return false;
-					const relA = path.relative(cwd, resolvedA).replace(/\\/g, "/");
-					const state = turnState.files[relA];
-					if (!state) return false;
-					return cacheManager.isLineInModifiedRange(
-						clone.startA,
-						state.modifiedRanges,
-					);
-				});
-				if (filtered.length > 0) {
-					let report = `🔴 New duplicates in modified code:\n`;
-					for (const clone of filtered.slice(0, 5)) {
-						report += `  ${path.basename(clone.fileA)}:${clone.startA} ↔ ${path.basename(clone.fileB)}:${clone.startB} (${clone.lines} lines)\n`;
-					}
-					parts.push(report);
-				}
-				// Update the global cache with fresh results
-				_cachedJscpdClones = result.clones;
-				cacheManager.writeCache("jscpd", result, cwd);
-			}
-		}
-
-		// madge: only check files where imports changed
-		if (await depChecker.ensureAvailable()) {
-			const madgeFiles = cacheManager.getFilesForMadge(cwd);
-			if (madgeFiles.length > 0) {
+			// Max cycles guard — force through after N turns with unresolved issues
+			if (cacheManager.isMaxCyclesExceeded(cwd)) {
 				dbg(
-					`turn_end: madge checking ${madgeFiles.length} file(s) for circular deps`,
+					"turn_end: max cycles exceeded, clearing state and forcing through",
 				);
-				for (const file of madgeFiles) {
-					const absPath = path.resolve(cwd, file);
-					const depResult = depChecker.checkFile(absPath);
-					if (depResult.hasCircular && depResult.circular.length > 0) {
-						const circularDeps = depResult.circular
-							.flatMap((d) => d.path)
-							.filter((p: string) => !absPath.endsWith(path.basename(p)));
-						const uniqueDeps = [...new Set(circularDeps)];
-						if (uniqueDeps.length > 0) {
-							parts.push(
-								`🟡 Circular dependency in ${file}: imports ${uniqueDeps.join(", ")}`,
-							);
+				cacheManager.clearTurnState(cwd);
+				return;
+			}
+
+			const parts: string[] = [];
+
+			// jscpd: scan modified files, filter results to modified line ranges
+			if (jscpdClient.isAvailable()) {
+				const jscpdFiles = cacheManager.getFilesForJscpd(cwd);
+				if (jscpdFiles.length > 0) {
+					dbg(`turn_end: jscpd scanning ${jscpdFiles.length} file(s)`);
+					// Use full scan then filter — jscpd doesn't support per-file scanning
+					const result = jscpdClient.scan(cwd);
+					// Filter clones to only those intersecting modified ranges
+					const jscpdFileSet = new Set(
+						jscpdFiles.map((f) => path.resolve(cwd, f)),
+					);
+					const filtered = result.clones.filter((clone) => {
+						const resolvedA = path.resolve(clone.fileA);
+						if (!jscpdFileSet.has(resolvedA)) return false;
+						const relA = path.relative(cwd, resolvedA).replace(/\\/g, "/");
+						const state = turnState.files[relA];
+						if (!state) return false;
+						return cacheManager.isLineInModifiedRange(
+							clone.startA,
+							state.modifiedRanges,
+						);
+					});
+					if (filtered.length > 0) {
+						let report = `🔴 New duplicates in modified code:\n`;
+						for (const clone of filtered.slice(0, 5)) {
+							report += `  ${path.basename(clone.fileA)}:${clone.startA} ↔ ${path.basename(clone.fileB)}:${clone.startB} (${clone.lines} lines)\n`;
+						}
+						parts.push(report);
+					}
+					// Update the global cache with fresh results
+					_cachedJscpdClones = result.clones;
+					cacheManager.writeCache("jscpd", result, cwd);
+				}
+			}
+
+			// madge: only check files where imports changed
+			if (await depChecker.ensureAvailable()) {
+				const madgeFiles = cacheManager.getFilesForMadge(cwd);
+				if (madgeFiles.length > 0) {
+					dbg(
+						`turn_end: madge checking ${madgeFiles.length} file(s) for circular deps`,
+					);
+					for (const file of madgeFiles) {
+						const absPath = path.resolve(cwd, file);
+						const depResult = depChecker.checkFile(absPath);
+						if (depResult.hasCircular && depResult.circular.length > 0) {
+							const circularDeps = depResult.circular
+								.flatMap((d) => d.path)
+								.filter((p: string) => !absPath.endsWith(path.basename(p)));
+							const uniqueDeps = [...new Set(circularDeps)];
+							if (uniqueDeps.length > 0) {
+								parts.push(
+									`🟡 Circular dependency in ${file}: imports ${uniqueDeps.join(", ")}`,
+								);
+							}
 						}
 					}
 				}
 			}
+
+			// Increment turn cycle and persist
+			cacheManager.incrementTurnCycle(cwd);
+
+			if (parts.length > 0) {
+				dbg(`turn_end: ${parts.length} issue(s) found`);
+				// Issues found — state persists so next turn re-checks.
+				// After maxCycles, clearTurnState forces through.
+			} else {
+				// No issues — clear state for next batch of edits
+				cacheManager.clearTurnState(cwd);
+			}
+
+			// --- Error debt: trigger background test run for next session ---
+			// We don't wait - just set a flag that tests should run at next session_start
+			// This way tests run async (session_start is when agent is idle)
+			if (errorDebtBaseline && files.length > 0) {
+				dbg("turn_end: marking error debt check for next session");
+				// Write a marker file - next session_start will pick this up
+				cacheManager.writeCache(
+					"errorDebt",
+					{
+						pendingCheck: true,
+						baselineTestsPassed: errorDebtBaseline.testsPassed,
+					},
+					cwd,
+				);
+			}
+
+			// Clear fixed tracking so files can be fixed again on next turn
+			fixedThisTurn.clear();
+
+			// --- LSP cleanup on turn end (Phase 3) ---
+			// Only shutdown if no files are being actively edited
+			if (pi.getFlag("lens-lsp") && files.length === 0) {
+				resetLSPService();
+			}
+
+			// --- Format service cleanup ---
+			resetFormatService();
+		} catch (turnEndErr) {
+			dbg(`turn_end crashed: ${turnEndErr}`);
+			dbg(`turn_end crash stack: ${(turnEndErr as Error).stack}`);
 		}
-
-		// Increment turn cycle and persist
-		cacheManager.incrementTurnCycle(cwd);
-
-		if (parts.length > 0) {
-			dbg(`turn_end: ${parts.length} issue(s) found`);
-			// Issues found — state persists so next turn re-checks.
-			// After maxCycles, clearTurnState forces through.
-		} else {
-			// No issues — clear state for next batch of edits
-			cacheManager.clearTurnState(cwd);
-		}
-
-		// --- Error debt: trigger background test run for next session ---
-		// We don't wait - just set a flag that tests should run at next session_start
-		// This way tests run async (session_start is when agent is idle)
-		if (errorDebtBaseline && files.length > 0) {
-			dbg("turn_end: marking error debt check for next session");
-			// Write a marker file - next session_start will pick this up
-			cacheManager.writeCache(
-				"errorDebt",
-				{
-					pendingCheck: true,
-					baselineTestsPassed: errorDebtBaseline.testsPassed,
-				},
-				cwd,
-			);
-		}
-
-		// Clear fixed tracking so files can be fixed again on next turn
-		fixedThisTurn.clear();
-
-		// --- LSP cleanup on turn end (Phase 3) ---
-		// Only shutdown if no files are being actively edited
-		if (pi.getFlag("lens-lsp") && files.length === 0) {
-			resetLSPService();
-		}
-
-		// --- Format service cleanup ---
-		resetFormatService();
 	});
 }
