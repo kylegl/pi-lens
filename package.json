@@ -33,8 +33,8 @@
 	"license": "MIT",
 	"files": [
 		"index.ts",
-		"clients/",
-		"commands/",
+		"clients/**/*.ts",
+		"commands/**/*.ts",
 		"rules/",
 		"skills/",
 		"default-architect.yaml",

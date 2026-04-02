@@ -1,0 +1,17 @@
+# Safety net — the files field in package.json already whitelists only what's needed.
+# These patterns guard against anything accidentally slipping through.
+
+# Compiled JS (pi loads .ts directly)
+*.js
+*.js.map
+*.d.ts
+
+# Test files (moved to tests/ which is outside the files whitelist)
+tests/
+*.test.ts
+
+# Dev artifacts
+*.log
+.pi-lens/
+_test_python_project/
+test-filetime/
