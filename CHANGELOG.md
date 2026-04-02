@@ -2,13 +2,21 @@
 
 All notable changes to pi-lens will be documented in this file.
 
-## [3.6.1] - 2026-04-02
+## [3.6.2] - 2026-04-02
 
 ### Added
-- **Condensed skill auto-loading** — Injects 70-token tool selection guidance at session start:
+- **Condensed skill auto-loading** — Injects ~70-token tool selection guidance at session start (vs 1,355 for full skills):
   - Quick reference for when to use lsp_navigation vs ast_grep_search vs grep
   - References full skills for lazy loading (ast-grep, lsp-navigation)
   - Prevents common tool selection errors without loading full skill content
+
+### Changed
+- **Streamlined session start injection** — Removed TODO/Knip/jscpd reports from initial context:
+  - Scans still run and cache for on-demand access via `/lens-booboo`
+  - Reduces session start noise (only active tools list, error reminder, skill guidance remain)
+  - Caching preserved for duplicate detection on file writes
+
+## [3.6.1] - 2026-04-02
 
 ### Changed
 - **Updated package description** — More concise: "Real-time code feedback for pi — LSP, linters, formatters, type-checking, structural analysis & booboo"
