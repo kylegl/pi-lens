@@ -143,6 +143,13 @@ pattern: "console.log($$$ARGS)"
 
 **Error: "Multiple AST nodes detected"** → Your pattern has multiple code fragments. Use metavariables like `$TEST` instead of literal text in quotes.
 
+**No matches found?** → Verify your pattern:
+1. Use `read` to check actual file content first
+2. Use `ast_grep_search` with same pattern to preview matches  
+3. Check metavariable names match actual code (e.g., `$PARAM` captures `ctx: Type`, not `$CTX`)
+4. Ensure pattern is valid code structure (function call, not partial expression)
+5. Try simpler pattern first, then add constraints
+
 **Fallback:** If pattern fails twice → `grep -rn "pattern" src/`
 
 **Debug:** https://ast-grep.github.io/playground.html
