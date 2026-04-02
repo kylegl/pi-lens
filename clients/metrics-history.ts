@@ -117,6 +117,8 @@ export function captureSnapshot(
 		cognitiveComplexity: number;
 		maxNestingDepth: number;
 		linesOfCode: number;
+		maxCyclomatic: number;
+		entropy: number;
 	},
 ): void {
 	// Use in-memory cache if available, otherwise load from disk
@@ -134,6 +136,8 @@ export function captureSnapshot(
 		cognitive: metrics.cognitiveComplexity,
 		nesting: metrics.maxNestingDepth,
 		lines: metrics.linesOfCode,
+		maxCyclomatic: metrics.maxCyclomatic,
+		entropy: Math.round(metrics.entropy * 100) / 100,
 	};
 
 	const existing = pendingHistory.files[relativePath];
