@@ -21,8 +21,25 @@ export type { DispatchLatencyReport, RunnerLatency };
 // Re-export latency tracking types and functions
 export { clearLatencyReports, formatLatencyReport, getLatencyReports };
 
+import type { BaselineStore } from "./types.js";
+
 // Import runners to register them
 import "./runners/index.js";
+
+// --- Persistent Baseline Store ---
+// Survives across dispatchLint calls within a session.
+// Without this, delta mode is a no-op: every call creates a fresh empty
+// store, so baselines.get() always returns undefined and every issue
+// looks "new" every time.
+const sessionBaselines: BaselineStore = createBaselineStore();
+
+/**
+ * Reset baselines — call on session_start so a new session
+ * starts with a clean slate.
+ */
+export function resetDispatchBaselines(): void {
+	sessionBaselines.clear();
+}
 
 /**
  * Run linting for a file using the declarative dispatch system
@@ -38,7 +55,9 @@ export async function dispatchLint(
 	pi: PiAgentAPI,
 ): Promise<string> {
 	// By default, only run BLOCKING rules for fast feedback on file write
-	const ctx = createDispatchContext(filePath, cwd, pi, undefined, true);
+	// Uses persistent sessionBaselines so delta mode actually filters
+	// pre-existing issues after the first write.
+	const ctx = createDispatchContext(filePath, cwd, pi, sessionBaselines, true);
 
 	// Import dispatchForFile dynamically to avoid circular deps
 	const { dispatchForFile } = await import("./dispatcher.js");

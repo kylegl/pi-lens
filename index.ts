@@ -12,7 +12,10 @@ import { BiomeClient } from "./clients/biome-client.js";
 import { CacheManager } from "./clients/cache-manager.js";
 import { ComplexityClient } from "./clients/complexity-client.js";
 import { DependencyChecker } from "./clients/dependency-checker.js";
-import { dispatchLint } from "./clients/dispatch/integration.js";
+import {
+	dispatchLint,
+	resetDispatchBaselines,
+} from "./clients/dispatch/integration.js";
 import { createFileTime, FileTimeError } from "./clients/file-time.js";
 import {
 	getFormatService,
@@ -798,6 +801,7 @@ export default function (pi: ExtensionAPI) {
 		// Reset session state
 		metricsClient.reset();
 		complexityBaselines.clear();
+		resetDispatchBaselines();
 
 		// Reset LSP service so the new session starts with fresh diagnostics.
 		// Without this, stale cascade errors from a previous session persist
