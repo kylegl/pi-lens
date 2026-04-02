@@ -378,9 +378,10 @@ export default function (pi: ExtensionAPI) {
 		description:
 			"Apply Biome formatting to files. Usage: /lens-format [file-path] or /lens-format --all",
 		handler: async (args, ctx) => {
-			if (!biomeClient.isAvailable()) {
+			const available = await biomeClient.ensureAvailable();
+			if (!available) {
 				ctx.ui.notify(
-					"Biome not installed. Run: npm install -D @biomejs/biome",
+					"Biome not available and auto-install failed. Run: npm install -D @biomejs/biome",
 					"error",
 				);
 				return;
@@ -933,7 +934,7 @@ export default function (pi: ExtensionAPI) {
 			// Log available tools
 			const tools: string[] = [];
 			tools.push("TypeScript LSP"); // Always available
-			if (biomeClient.isAvailable()) tools.push("Biome");
+			if (await biomeClient.ensureAvailable()) tools.push("Biome");
 			if (astGrepClient.isAvailable()) tools.push("ast-grep");
 			if (ruffClient.isAvailable()) tools.push("Ruff");
 			if (knipClient.isAvailable()) tools.push("Knip");

@@ -208,7 +208,7 @@ export async function runPipeline(
 
 		if (
 			!noAutofixBiome &&
-			biomeClient.isAvailable() &&
+			(await biomeClient.ensureAvailable()) &&
 			biomeClient.isSupportedFile(filePath)
 		) {
 			const result = biomeClient.fixFile(filePath);

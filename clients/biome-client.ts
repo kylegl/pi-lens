@@ -111,6 +111,38 @@ export class BiomeClient {
 	}
 
 	/**
+	 * Ensure Biome is available, auto-installing if necessary.
+	 * Prefer this over isAvailable() for auto-install behavior.
+	 */
+	async ensureAvailable(): Promise<boolean> {
+		if (this.biomeAvailable !== null) return this.biomeAvailable;
+
+		// Check if already available
+		const result = this.spawnBiome(["--version"], 10000);
+		if (!result.error && result.status === 0) {
+			this.biomeAvailable = true;
+			return true;
+		}
+
+		// Auto-install via pi-lens installer
+		this.log("Biome not found, attempting auto-install...");
+		const { ensureTool } = await import("./installer/index.js");
+		const installedPath = await ensureTool("biome");
+
+		if (installedPath) {
+			this.log(`Biome auto-installed: ${installedPath}`);
+			// Set the installed path as local binary to avoid npx overhead
+			this.localBinaryPath = installedPath;
+			this.biomeAvailable = true;
+			return true;
+		}
+
+		this.log("Biome auto-install failed");
+		this.biomeAvailable = false;
+		return false;
+	}
+
+	/**
 	 * Check if a file is supported by Biome
 	 */
 	isSupportedFile(filePath: string): boolean {
