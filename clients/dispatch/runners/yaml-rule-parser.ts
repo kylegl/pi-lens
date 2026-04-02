@@ -25,6 +25,14 @@ export interface YamlRuleCondition {
 	any?: YamlRuleCondition[];
 	all?: YamlRuleCondition[];
 	not?: YamlRuleCondition;
+	// Conditions parsed but NOT supported by the NAPI runner.
+	// Rules using these are skipped to prevent false positives.
+	inside?: YamlRuleCondition;
+	follows?: YamlRuleCondition;
+	precedes?: YamlRuleCondition;
+	stopBy?: string;
+	field?: string;
+	nthChild?: unknown;
 }
 
 export interface YamlRule {
@@ -34,6 +42,7 @@ export interface YamlRule {
 	message?: string;
 	metadata?: { weight?: number; category?: string };
 	rule?: YamlRuleCondition;
+	constraints?: Record<string, { regex?: string }>;
 }
 
 interface CachedRules {
@@ -164,6 +173,44 @@ export function isStructuredRule(rule: YamlRule): boolean {
 	);
 }
 
+/**
+ * Check if a rule or any of its nested conditions use features
+ * not supported by the NAPI runner (inside, follows, precedes,
+ * stopBy, field, nthChild). Rules using these must be skipped
+ * to prevent false positives from incomplete condition evaluation.
+ */
+export function hasUnsupportedConditions(rule: YamlRule): boolean {
+	if (rule.constraints) return true;
+	if (!rule.rule) return false;
+	return conditionHasUnsupported(rule.rule);
+}
+
+function conditionHasUnsupported(c: YamlRuleCondition): boolean {
+	if (
+		c.inside ||
+		c.follows ||
+		c.precedes ||
+		c.stopBy ||
+		c.field ||
+		c.nthChild
+	) {
+		return true;
+	}
+	if (c.has && conditionHasUnsupported(c.has)) return true;
+	if (c.not && conditionHasUnsupported(c.not)) return true;
+	if (c.any) {
+		for (const sub of c.any) {
+			if (conditionHasUnsupported(sub)) return true;
+		}
+	}
+	if (c.all) {
+		for (const sub of c.all) {
+			if (conditionHasUnsupported(sub)) return true;
+		}
+	}
+	return false;
+}
+
 export function calculateRuleComplexity(
 	condition: YamlRuleCondition | undefined,
 ): number {
@@ -264,6 +311,13 @@ export function parseSimpleYaml(content: string): YamlRule | null {
 			value === "|"
 				? (multilineKey = "message")
 				: (rule.message = stripQuotes(value));
+		} else if (key === "constraints") {
+			rule.constraints = {};
+			stack.push({
+				name: "constraints",
+				indent,
+				obj: rule.constraints as unknown as YamlNode,
+			});
 		} else if (key === "metadata") {
 			rule.metadata = {};
 			stack.push({ name: "metadata", indent, obj: rule.metadata as YamlNode });
@@ -288,6 +342,17 @@ export function parseSimpleYaml(content: string): YamlRule | null {
 				obj.kind = value;
 			} else if (key === "regex") {
 				obj.regex = stripQuotes(value);
+			} else if (key === "inside" || key === "follows" || key === "precedes") {
+				// Mark as present for unsupported-condition detection
+				obj[key] = {} as YamlRuleCondition;
+				stack.push({ name: key, indent, obj: obj[key] as YamlNode });
+			} else if (key === "stopBy") {
+				obj.stopBy = stripQuotes(value) || "end";
+			} else if (key === "field") {
+				obj.field = stripQuotes(value);
+			} else if (key === "nthChild") {
+				obj.nthChild = value || true;
+				stack.push({ name: "nthChild", indent, obj: {} as YamlNode });
 			} else if (key === "has" || key === "not") {
 				obj[key] = {} as YamlRuleCondition;
 				stack.push({ name: key, indent, obj: obj[key] as YamlNode });
@@ -316,12 +381,16 @@ export function parseSimpleYaml(content: string): YamlRule | null {
 						});
 
 						const itemContent = nextTrimmed.substring(2);
-						if (itemContent.includes(":")) {
-							const [itemKey, itemVal] = itemContent.split(":", 2);
+						const colonPos = itemContent.indexOf(":");
+						if (colonPos !== -1) {
+							const itemKey = itemContent.substring(0, colonPos);
+							const itemVal = itemContent.substring(colonPos + 1);
 							if (itemKey.trim() === "pattern") {
 								item.pattern = stripQuotes(itemVal.trim());
 							} else if (itemKey.trim() === "kind") {
 								item.kind = itemVal.trim();
+							} else if (itemKey.trim() === "regex") {
+								item.regex = stripQuotes(itemVal.trim());
 							}
 						} else if (itemContent) {
 							item.pattern = stripQuotes(itemContent);

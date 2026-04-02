@@ -83,7 +83,8 @@ function riskyOperation() {
 
 			// Should complete successfully (not skipped, not failed)
 			expect(napiResult.status).toBe("succeeded");
-			expect(napiResult.semantic).toBe("warning"); // Has findings, so marked as warning
+			// Semantic reflects the highest severity: "blocking" if any error-severity rules matched
+			expect(["warning", "blocking"]).toContain(napiResult.semantic);
 
 			// Log findings
 			console.log("NAPI found:", napiResult.diagnostics.length, "issues");

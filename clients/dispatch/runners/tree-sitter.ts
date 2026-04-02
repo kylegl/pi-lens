@@ -7,6 +7,7 @@
  */
 
 import path from "node:path";
+import { normalizeMapKey } from "../../path-utils.js";
 import { TreeSitterClient } from "../../tree-sitter-client.js";
 import { queryLoader } from "../../tree-sitter-query-loader.js";
 import type {
@@ -95,7 +96,10 @@ const treeSitterRunner: RunnerDefinition = {
 					query.id, // Use query ID as pattern (findMatchingQuery will resolve it)
 					languageId,
 					rootDir,
-					{ maxResults: 10, fileFilter: (f) => f === filePath },
+					{
+						maxResults: 10,
+						fileFilter: (f) => normalizeMapKey(f) === normalizeMapKey(filePath),
+					},
 				);
 
 				for (const match of matches) {

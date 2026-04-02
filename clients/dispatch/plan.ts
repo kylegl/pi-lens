@@ -39,6 +39,8 @@ export const TOOL_PLANS: Record<string, ToolPlan> = {
 			{ mode: "all", runnerIds: ["ast-grep-napi"], filterKinds: ["jsts"] },
 			// Type safety checks (has some blocking errors)
 			{ mode: "fallback", runnerIds: ["type-safety"], filterKinds: ["jsts"] },
+			// Similarity detection — warns about duplicated/reusable code
+			{ mode: "fallback", runnerIds: ["similarity"], filterKinds: ["jsts"] },
 			// Note: ast-grep CLI kept for ast_grep_search/ast_grep_replace tools only
 			// Note: biome, oxlint handled by direct auto-fix calls in index.ts (not in dispatch)
 			// Architectural rules (guidance only, not blocking) - runs via /lens-booboo only
@@ -178,6 +180,7 @@ export const FULL_LINT_PLANS: Record<string, ToolPlan> = {
 				filterKinds: ["jsts"],
 			},
 			{ mode: "fallback", runnerIds: ["type-safety"], filterKinds: ["jsts"] },
+			{ mode: "fallback", runnerIds: ["similarity"], filterKinds: ["jsts"] },
 			{ mode: "fallback", runnerIds: ["architect"], filterKinds: ["jsts"] },
 		],
 	},

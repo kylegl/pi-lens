@@ -9,7 +9,10 @@ note: |
   BAD: import { User } from '../models/user';
   GOOD: import { User } from '../types/user';
 rule:
-  pattern: import { $$$ } from "$PATH"
-constraints:
-  PATH:
-    regex: ".*models.*|.*database.*|.*prisma.*"
+  any:
+    - pattern: import { $$$ } from "../models/$_"
+    - pattern: import { $$$ } from "../../models/$_"
+    - pattern: import { $$$ } from "../database/$_"
+    - pattern: import { $$$ } from "../../database/$_"
+    - pattern: import { $$$ } from "../prisma/$_"
+    - pattern: import { $$$ } from "../../prisma/$_"

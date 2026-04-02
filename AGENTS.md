@@ -1,5 +1,23 @@
 # AGENTS.md - Project-specific context for pi agents
 
+## Build & Test
+
+- `npm run build` — compile TypeScript (`tsc`)
+- `npm test` — run tests (`vitest run`)
+- **After every edit to `.ts` files, run `npm run build`.** Pi loads `.js` at runtime, not `.ts` directly. The `.js` files are gitignored build artifacts.
+
+## Project Structure
+
+This is a **pi extension**. Entry point: `index.ts`
+
+- `index.ts` — main extension hook (tool_result handler, session_start, flags)
+- `clients/` — lint tool wrappers, utilities, pipeline orchestration
+- `clients/pipeline.ts` — post-write pipeline (format → fix → lint → test)
+- `clients/dispatch/` — lint dispatcher and runners
+- `clients/lsp/` — LSP server management
+- `commands/` — slash commands (`/lens-booboo`, `/lens-booboo-fix`, `/lens-booboo-refactor`)
+- `rules/ast-grep-rules/` — AST structural lint rules
+
 ## Knip False Positives
 
 Knip reports all `.ts` files as `[file]` (unused files) because it doesn't
@@ -7,16 +25,13 @@ understand that pi loads `index.ts` directly at runtime — not via npm scripts.
 **This is a false positive for pi extensions.**
 
 When running `/lens-booboo-fix`:
-- **IGNORE** all `[file]` type issues from Knip (dead code section)
-- Only act on `[export]`, `[dependency]`, `[devDependency]` issues from Knip
+- **IGNORE** all `[file]` type issues from Knip
+- Only act on `[export]`, `[dependency]`, `[devDependency]` issues
 
-Do NOT "fix" by deleting or restructuring source files that knip reports
-as unused — they ARE used, just not via npm entry points.
+Do NOT delete or restructure source files that Knip reports as unused — they ARE used.
 
-## Project Structure
+## Code Style
 
-This is a pi extension. Key entry point: `index.ts`
-
-- `clients/` - Lint tool wrappers and utilities
-- `commands/` - /lens-booboo, /lens-booboo-fix, /lens-booboo-refactor
-- `rules/ast-grep-rules/` - AST structural lint rules
+- ESM (`"type": "module"` in package.json)
+- Strict TypeScript (ES2020 target, bundler module resolution)
+- Imports use `.js` extensions (e.g., `import { foo } from "./bar.js"`)
