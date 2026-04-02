@@ -8,6 +8,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { RuleCache } from "../../cache/rule-cache.js";
 import { normalizeMapKey } from "../../path-utils.js";
 import { TreeSitterClient } from "../../tree-sitter-client.js";
 import {
@@ -153,18 +154,68 @@ const treeSitterRunner: RunnerDefinition = {
 			return { status: "skipped", diagnostics: [], semantic: "none" };
 		}
 
-		// Load queries if not already loaded
-		if (!queryLoader.getAllQueries().length) {
-			await queryLoader.loadQueries();
+		// Try cache first, fall back to loading from disk
+		let languageQueries: TreeSitterQuery[] = [];
+		const cache = new RuleCache(languageId);
+
+		// Get all rule files for this language
+		const rulesDir = path.join(
+			process.cwd(),
+			"rules",
+			"tree-sitter-queries",
+			languageId,
+		);
+		const ruleFiles: string[] = [];
+		if (fs.existsSync(rulesDir)) {
+			ruleFiles.push(
+				...fs
+					.readdirSync(rulesDir)
+					.filter((f) => f.endsWith(".yml"))
+					.map((f) => path.join(rulesDir, f)),
+			);
 		}
 
-		// Get all loaded queries for this language
-		const allQueries = queryLoader.getAllQueries();
-		const languageQueries = allQueries.filter(
-			(q) =>
-				q.language === languageId ||
-				(isJavaScript && q.language === "typescript"),
-		);
+		// Try cache
+		const cached = cache.get(ruleFiles);
+		if (cached) {
+			// Use cached queries
+			languageQueries = cached.queries.map(
+				(q) =>
+					({
+						...q,
+						has_fix: false,
+						filePath: "",
+					}) as TreeSitterQuery,
+			);
+		} else {
+			// Load from disk
+			if (!queryLoader.getAllQueries().length) {
+				await queryLoader.loadQueries();
+			}
+
+			const allQueries = queryLoader.getAllQueries();
+			languageQueries = allQueries.filter(
+				(q) =>
+					q.language === languageId ||
+					(isJavaScript && q.language === "typescript"),
+			);
+
+			// Save to cache
+			cache.set(
+				ruleFiles,
+				languageQueries.map((q) => ({
+					id: q.id,
+					name: q.name,
+					severity: q.severity,
+					language: q.language,
+					message: q.message,
+					query: q.query,
+					metavars: q.metavars,
+					post_filter: q.post_filter,
+					post_filter_params: q.post_filter_params,
+				})),
+			);
+		}
 
 		if (languageQueries.length === 0) {
 			return { status: "succeeded", diagnostics: [], semantic: "none" };
