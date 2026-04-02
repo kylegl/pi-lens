@@ -31,6 +31,11 @@ import { logLatency } from "./clients/latency-logger.js";
 import { getLSPService, resetLSPService } from "./clients/lsp/index.js";
 import { MetricsClient } from "./clients/metrics-client.js";
 import { captureSnapshot } from "./clients/metrics-history.js";
+import {
+	buildProjectIndex,
+	loadIndex,
+	type ProjectIndex,
+} from "./clients/project-index.js";
 import { RuffClient } from "./clients/ruff-client.js";
 import {
 	formatRulesForPrompt,
@@ -771,6 +776,7 @@ export default function (pi: ExtensionAPI) {
 	let _cachedJscpdClones: import("./clients/jscpd-client.js").DuplicateClone[] =
 		[];
 	const cachedExports = new Map<string, string>(); // function name -> file path
+	let cachedProjectIndex: ProjectIndex | null = null; // similarity index for pre-write checks
 	const complexityBaselines: Map<
 		string,
 		import("./clients/complexity-client.js").FileComplexity
@@ -802,6 +808,7 @@ export default function (pi: ExtensionAPI) {
 		metricsClient.reset();
 		complexityBaselines.clear();
 		resetDispatchBaselines();
+		cachedProjectIndex = null;
 
 		// Reset LSP service so the new session starts with fresh diagnostics.
 		// Without this, stale cascade errors from a previous session persist
@@ -966,6 +973,36 @@ export default function (pi: ExtensionAPI) {
 			for (const [name, file] of exports) {
 				cachedExports.set(name, file);
 			}
+		}
+
+		// Build similarity index for pre-write structural duplicate detection.
+		// Uses the same source files as the exports scan. The index is ~50ms
+		// to query but seconds to build, so we do it once at session start.
+		try {
+			const existing = await loadIndex(cwd);
+			if (existing && existing.entries.size > 0) {
+				cachedProjectIndex = existing;
+				dbg(
+					`session_start: loaded project index from disk (${existing.entries.size} entries)`,
+				);
+			} else {
+				const sourceFiles = getSourceFiles(cwd, true);
+				const tsFiles = sourceFiles.filter(
+					(f) => f.endsWith(".ts") || f.endsWith(".tsx"),
+				);
+				if (tsFiles.length > 0 && tsFiles.length <= 500) {
+					cachedProjectIndex = await buildProjectIndex(cwd, tsFiles);
+					dbg(
+						`session_start: built project index (${cachedProjectIndex.entries.size} entries from ${tsFiles.length} files)`,
+					);
+				} else {
+					dbg(
+						`session_start: skipped project index (${tsFiles.length} files — ${tsFiles.length === 0 ? "none" : "too many"})`,
+					);
+				}
+			}
+		} catch (err) {
+			dbg(`session_start: project index build failed: ${err}`);
 		}
 
 		dbg(
