@@ -205,8 +205,11 @@ export async function launchLSP(
 		if (npmGlobalPath) {
 			spawnCommand = npmGlobalPath;
 			// Recompute needsShell for npm global path
-			const globalHasExt = /\.(exe|cmd|bat)$/i.test(spawnCommand);
-			needsShell = isWindows && (spawnCommand.includes(" ") || !globalHasExt);
+			needsShell =
+				isWindows &&
+				(spawnCommand.includes(" ") ||
+					/\.(cmd|bat)$/i.test(spawnCommand) ||
+					!/\.(exe|cmd|bat)$/i.test(spawnCommand));
 		}
 	}
 
@@ -225,9 +228,11 @@ export async function launchLSP(
 			if (npmGlobalPath && npmGlobalPath !== spawnCommand) {
 				console.error(`[lsp] Trying npm global: ${npmGlobalPath}`);
 				// Recompute needsShell for npm global path
-				const globalHasExt = /\.(exe|cmd|bat)$/i.test(npmGlobalPath);
 				const needsShellGlobal =
-					isWindows && (npmGlobalPath.includes(" ") || !globalHasExt);
+					isWindows &&
+					(npmGlobalPath.includes(" ") ||
+						/\.(cmd|bat)$/i.test(npmGlobalPath) ||
+						!/\.(exe|cmd|bat)$/i.test(npmGlobalPath));
 				proc = trySpawn(npmGlobalPath, args, cwd, env, needsShellGlobal);
 			} else {
 				throw err;
@@ -256,7 +261,7 @@ export async function launchLSP(
 
 		// Attach error handler that can reject for immediate errors
 		proc.on("error", (err: Error & { code?: string }) => {
-			if (!settled && err.code === "ENOENT") {
+			if (!settled && (err.code === "ENOENT" || err.code === "EINVAL")) {
 				settled = true;
 				reject(
 					new Error(
@@ -346,7 +351,7 @@ export async function launchViaPackageManager(
 			let settled = false;
 
 			proc.on("error", (err: Error & { code?: string }) => {
-				if (!settled && err.code === "ENOENT") {
+				if (!settled && (err.code === "ENOENT" || err.code === "EINVAL")) {
 					settled = true;
 					reject(
 						new Error(
