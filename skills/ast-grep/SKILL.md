@@ -86,7 +86,12 @@ ast_grep_search
 ## Common Failures
 
 ```typescript
-// ❌ INVALID: Incomplete
+// ❌ INVALID: Multiple AST nodes (missing parentheses)
+pattern: "it\"test name\""
+// ✅ VALID: Single AST node with metavariable
+pattern: "it($TEST)"
+
+// ❌ INVALID: Incomplete code
 pattern: "function $NAME("
 // ✅ VALID: Complete code
 pattern: "function $NAME($$$PARAMS) { $$$BODY }"
@@ -101,6 +106,8 @@ pattern: "console.log(.*)"
 // ✅ Metavariables
 pattern: "console.log($$$ARGS)"
 ```
+
+**Error: "Multiple AST nodes detected"** → Your pattern has multiple code fragments. Use metavariables like `$TEST` instead of literal text in quotes.
 
 **Fallback:** If pattern fails twice → `grep -rn "pattern" src/`
 
