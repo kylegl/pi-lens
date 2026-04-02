@@ -13,8 +13,8 @@
 6. **Auto-installs** — TypeScript, Python, Biome, Ruff, and analysis tools auto-install on first use
 7. **Only shows NEW issues** — Delta-mode tracks baselines and filters pre-existing problems
 
-**🔴 Blockers** (type errors, secrets, empty catches) appear inline and stop the agent until fixed.  
-**🟡 Warnings** (complexity, code smells) go to `/lens-booboo` — run it to see them all.
+**Blockers** (type errors, secrets, empty catches) appear inline and stop the agent until fixed.  
+**Warnings** (complexity, code smells) go to `/lens-booboo` — run it to see them all.
 
 ## Quick Start
 
@@ -56,9 +56,9 @@ pi-lens **automatically formats** every file you write or edit. Formatters are a
 
 | Formatter | Languages | Detection | Installation | Role |
 |-----------|-----------|-----------|--------------|------|
-| **Biome** ⭐ | TS/JS/JSON/CSS | `biome.json` or `@biomejs/biome` in devDependencies | ✅ Automatic | **Default** |
+| **Biome** | TS/JS/JSON/CSS | `biome.json` or `@biomejs/biome` in devDependencies | Automatic | **Default** |
 | **Prettier** | TS/JS/JSON/CSS/Markdown | `.prettierrc` or `prettier` in devDependencies | Manual (`npm install -g prettier`) | Fallback |
-| **Ruff** ⭐ | Python | `[tool.ruff]` in `pyproject.toml` | ✅ Automatic | **Default** |
+| **Ruff** | Python | `[tool.ruff]` in `pyproject.toml` | Automatic | **Default** |
 | **Black** | Python | `[tool.black]` in `pyproject.toml` | Manual (`pip install black`) | Fallback |
 | **gofmt** | Go | `go` binary available | Manual (included with Go SDK) | Default |
 | **rustfmt** | Rust | `rustfmt` binary available | Manual (included with Rust toolchain) | Default |
@@ -67,7 +67,7 @@ pi-lens **automatically formats** every file you write or edit. Formatters are a
 | **shfmt** | Shell | `shfmt` binary available | Manual (download binary) | Default |
 | **mix format** | Elixir | `mix` binary available | Manual (included with Elixir) | Default |
 
-⭐ = Auto-installed (no manual setup required)
+(*) = Auto-installed (no manual setup required)
 
 **How it works:**
 1. Agent writes a file
@@ -90,13 +90,13 @@ pi-lens **automatically lints** every file you write or edit. Linters are auto-d
 
 | Linter | Languages | Installation | Role | Priority |
 |--------|-----------|--------------|------|----------|
-| **Biome** ⭐ | TS/JS/JSON/CSS | ✅ Automatic | **Default** | 10 |
-| **Ruff** ⭐ | Python | ✅ Automatic | **Default** | 10 |
+| **Biome** | TS/JS/JSON/CSS | Automatic | **Default** | 10 |
+| **Ruff** | Python | Automatic | **Default** | 10 |
 | **oxlint** | TS/JS | Manual (`npm i -g oxlint`) | Fast alternative | 12 |
 | **ESLint** | JS/Vue/Svelte | `npx` via `--lens-lsp` | LSP only | - |
 | **shellcheck** | Bash/sh/zsh/fish | Manual (`apt install shellcheck`) | Shell scripts | 20 |
 
-⭐ = Auto-installed (no manual setup required)
+(*) = Auto-installed (no manual setup required)
 
 **Priority:** Lower numbers = run earlier. Biome/Ruff run first, followed by specialized linters.
 
@@ -140,9 +140,9 @@ pi --lens-lsp                    # Enable LSP
 | Feature | `pi` (Default) | `pi --lens-lsp` |
 |---------|----------------|-----------------|
 | **Type Checking** | Built-in TypeScriptClient | Full LSP (31 language servers) |
-| **Auto-format** | ✅ Biome, Prettier, Ruff, etc. | ✅ Same |
-| **Auto-fix** | ✅ Enabled by default | ✅ Same |
-| **Secrets scan** | ✅ Blocks on hardcoded secrets | ✅ Same |
+| **Auto-format** | Biome, Prettier, Ruff, etc. | Same |
+| **Auto-fix** | Enabled by default | Same |
+| **Secrets scan** | Blocks on hardcoded secrets | Same |
 | **Languages** | TypeScript, Python (built-in) | 31 languages via LSP |
 | **Python** | Ruff/pyright (built-in) | Pyright LSP |
 | **Go, Rust, etc.** | Basic linting | Full LSP support |
@@ -171,7 +171,7 @@ Every file write/edit triggers multiple analysis phases:
 
 **Output shown inline:**
 ```
-🔴 STOP — 1 issue(s) must be fixed:
+STOP — 1 issue(s) must be fixed:
   L23: var total = sum(items); — use 'let' or 'const'
 ```
 
@@ -218,16 +218,16 @@ pi-lens uses a **dispatcher-runner architecture** for extensible multi-language 
 **Tree-sitter runner patterns** (priority 14, AST-based structural analysis):
 
 TypeScript/JavaScript (13 patterns):
-- 🔴 **Error**: empty-catch, hardcoded-secrets, eval
-- 🟡 **Warning**: debugger, await-in-loop, console-statement, long-parameter-list, nested-ternary, deep-promise-chain, mixed-async-styles, deep-nesting, constructor-super, no-dupe-class-members
+- **Error**: empty-catch, hardcoded-secrets, eval
+- **Warning**: debugger, await-in-loop, console-statement, long-parameter-list, nested-ternary, deep-promise-chain, mixed-async-styles, deep-nesting, constructor-super, no-dupe-class-members
 
 TSX (2 patterns):
-- 🔴 **Error**: dangerously-set-inner-html
-- 🟡 **Warning**: no-nested-links
+- **Error**: dangerously-set-inner-html
+- **Warning**: no-nested-links
 
 Python (6 patterns):
-- 🔴 **Error**: bare-except, mutable-default-arg, eval-exec, unreachable-except  
-- 🟡 **Warning**: wildcard-import, is-vs-equals
+- **Error**: bare-except, mutable-default-arg, eval-exec, unreachable-except  
+- **Warning**: wildcard-import, is-vs-equals
 
 **Custom tree-sitter queries:** Add `.yml` files to `.pi-lens/rules/tree-sitter-queries/{typescript,python}/`
 
@@ -259,12 +259,12 @@ Inline heuristics to catch anti-patterns in real-time:
 
 **Blind Write Detection**
 - **Triggers:** Agent edits a file without reading it in the last 5 tool calls
-- **Warning:** `⚠ BLIND WRITE — editing 'file.ts' without reading in the last 5 tool calls.`
+- **Warning:** `BLIND WRITE — editing 'file.ts' without reading in the last 5 tool calls.`
 - **Why:** Prevents edits based on stale assumptions
 
 **Thrashing Detection**
 - **Triggers:** 3+ consecutive identical tool calls within 30 seconds
-- **Warning:** `🔴 THRASHING — 3 consecutive 'edit' calls with no other action.`
+- **Warning:** `[!] THRASHING — 3 consecutive 'edit' calls with no other action.`
 - **Why:** Catches stuck loops where the agent repeats failed actions
 
 **Behavior:** Warnings appear inline but do **not** block execution.
@@ -386,10 +386,10 @@ pi-lens tracks code quality metrics for every file:
 
 | Metric | Description | Threshold |
 |--------|-------------|-----------|
-| **Maintainability Index** | 0-100 composite score | >60 ✅ <20 🔴 |
-| **Cognitive Complexity** | Mental effort to understand | >20 🟡 >50 🔴 |
-| **Cyclomatic Complexity** | Independent code paths | >10 🟡 >20 🔴 |
-| **Code Entropy** | Shannon entropy in bits | >4.0 🟡 >7.0 🔴 |
+| **Maintainability Index** | 0-100 composite score | >60 good <20 bad |
+| **Cognitive Complexity** | Mental effort to understand | >20 warn >50 bad |
+| **Cyclomatic Complexity** | Independent code paths | >10 warn >20 bad |
+| **Code Entropy** | Shannon entropy in bits | >4.0 warn >7.0 bad |
 
 **Commands:**
 - `/lens-tdi` — Technical Debt Index (0-100) with grades A-F
@@ -527,13 +527,13 @@ pi-lens includes two built-in skills that guide the LLM on when to use specific 
 - **Error "Multiple AST nodes":** Use metavariables like `it($TEST)` not raw text like `it"test"`
 
 ```typescript
-// ✅ GOOD: Complete code with metavariables
+// GOOD: Complete code with metavariables
 ast_grep_search
   pattern: "console.log($MSG)"
   lang: typescript
   paths: ["src/"]
 
-// ❌ BAD: Incomplete pattern
+// BAD: BAD: Incomplete pattern
 pattern: "console.log("  // Missing args/body
 ```
 
@@ -558,14 +558,14 @@ pattern: "console.log("  // Missing args/body
 | Find TODO comments | — | `grep` |
 
 ```typescript
-// ✅ Code intelligence → LSP
+// Code intelligence → LSP
 lsp_navigation
   operation: "references"
   filePath: "src/utils.ts"
   line: 42
   character: 10
 
-// ❌ Don't use LSP for text patterns
+// BAD: Don't use LSP for text patterns
 pattern: "TODO"  // Use grep instead
 ```
 
