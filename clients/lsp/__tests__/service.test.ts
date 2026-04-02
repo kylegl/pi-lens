@@ -522,6 +522,9 @@ function createMockClient(diagnostics: any[] = []): LSPClientInfo {
 		documentSymbol: vi.fn().mockResolvedValue([]),
 		workspaceSymbol: vi.fn().mockResolvedValue([]),
 		implementation: vi.fn().mockResolvedValue([]),
+		prepareCallHierarchy: vi.fn().mockResolvedValue([]),
+		incomingCalls: vi.fn().mockResolvedValue([]),
+		outgoingCalls: vi.fn().mockResolvedValue([]),
 		shutdown: vi.fn().mockResolvedValue(undefined),
 	};
 }

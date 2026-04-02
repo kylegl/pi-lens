@@ -120,6 +120,16 @@ export interface LSPClientInfo {
 		line: number,
 		character: number,
 	): Promise<LSPLocation[]>;
+	/** Prepare call hierarchy at position */
+	prepareCallHierarchy(
+		filePath: string,
+		line: number,
+		character: number,
+	): Promise<LSPCallHierarchyItem[]>;
+	/** Find incoming calls (callers) */
+	incomingCalls(item: LSPCallHierarchyItem): Promise<LSPCallHierarchyIncomingCall[]>;
+	/** Find outgoing calls (callees) */
+	outgoingCalls(item: LSPCallHierarchyItem): Promise<LSPCallHierarchyOutgoingCall[]>;
 	shutdown(): Promise<void>;
 }
 
@@ -417,6 +427,55 @@ export async function createLSPClient(options: {
 				);
 				if (!result) return [];
 				return Array.isArray(result) ? result : [result];
+			} catch {
+				return [];
+			}
+		},
+
+		// --- Call Hierarchy Methods ---
+
+		async prepareCallHierarchy(filePath, line, character) {
+			const uri = pathToFileURL(filePath).href;
+			try {
+				const result = await connection.sendRequest(
+					"textDocument/prepareCallHierarchy",
+					{
+						textDocument: { uri },
+						position: { line, character },
+					},
+				);
+				if (!result) return [];
+				return Array.isArray(result) ? result : [result];
+			} catch {
+				return [];
+			}
+		},
+
+		async incomingCalls(item) {
+			try {
+				const result = await connection.sendRequest(
+					"callHierarchy/incomingCalls",
+					{
+						item,
+					},
+				);
+				if (!result) return [];
+				return Array.isArray(result) ? result : [];
+			} catch {
+				return [];
+			}
+		},
+
+		async outgoingCalls(item) {
+			try {
+				const result = await connection.sendRequest(
+					"callHierarchy/outgoingCalls",
+					{
+						item,
+					},
+				);
+				if (!result) return [];
+				return Array.isArray(result) ? result : [];
 			} catch {
 				return [];
 			}
