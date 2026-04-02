@@ -158,9 +158,9 @@ const treeSitterRunner: RunnerDefinition = {
 		let languageQueries: TreeSitterQuery[] = [];
 		const cache = new RuleCache(languageId);
 
-		// Get all rule files for this language
+		// Get all rule files for this language (use ctx.cwd for project root)
 		const rulesDir = path.join(
-			process.cwd(),
+			ctx.cwd,
 			"rules",
 			"tree-sitter-queries",
 			languageId,
