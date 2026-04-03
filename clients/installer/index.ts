@@ -335,7 +335,7 @@ async function installNpmTool(
 					const isValid = await verifyToolBinary(binPath);
 					if (!isValid) {
 						console.error(
-							`[auto-install] ${packageName} installed but verification failed. The binary may be corrupted.`,
+							`[auto-install] ${packageName} installed but verification failed (binary may be corrupted)`,
 						);
 						// Clean up the broken installation
 						try {
@@ -366,10 +366,8 @@ async function installNpmTool(
 			proc.on("error", (err) => reject(err));
 		});
 	} catch (err) {
-		console.error(
-			`[auto-install] Failed to install npm tool ${packageName}:`,
-			err,
-		);
+		console.error(`[auto-install] Failed to install ${packageName}: ${(err as Error).message}`);
+		debugLog("Full error:", err);
 		return undefined;
 	}
 }
@@ -402,10 +400,8 @@ async function installPipTool(
 			proc.on("error", (err) => reject(err));
 		});
 	} catch (err) {
-		console.error(
-			`[auto-install] Failed to install pip tool ${packageName}:`,
-			err,
-		);
+		console.error(`[auto-install] Failed to install ${packageName}: ${(err as Error).message}`);
+		debugLog("Full error:", err);
 		return undefined;
 	}
 }
@@ -443,7 +439,8 @@ export async function installTool(toolId: string): Promise<boolean> {
 				return false;
 		}
 	} catch (err) {
-		console.error(`[auto-install] Failed to install ${tool.name}:`, err);
+		console.error(`[auto-install] Failed to install ${tool.name}: ${(err as Error).message}`);
+		debugLog("Full error:", err);
 		return false;
 	}
 }
