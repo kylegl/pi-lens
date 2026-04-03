@@ -22,7 +22,6 @@ import {
 } from "./clients/format-service.js";
 import { GoClient } from "./clients/go-client.js";
 import { ensureTool } from "./clients/installer/index.js";
-import { buildInterviewer } from "./clients/interviewer.js";
 import { JscpdClient } from "./clients/jscpd-client.js";
 import { KnipClient } from "./clients/knip-client.js";
 // RELOAD TEST 6: Cache verification run
