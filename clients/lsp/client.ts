@@ -83,6 +83,8 @@ export interface LSPClientInfo {
 	serverId: string;
 	root: string;
 	connection: MessageConnection;
+	/** Check if the connection is still alive */
+	isAlive: () => boolean;
 	notify: {
 		open(filePath: string, content: string, languageId: string): Promise<void>;
 		change(filePath: string, content: string): Promise<void>;
@@ -127,9 +129,13 @@ export interface LSPClientInfo {
 		character: number,
 	): Promise<LSPCallHierarchyItem[]>;
 	/** Find incoming calls (callers) */
-	incomingCalls(item: LSPCallHierarchyItem): Promise<LSPCallHierarchyIncomingCall[]>;
+	incomingCalls(
+		item: LSPCallHierarchyItem,
+	): Promise<LSPCallHierarchyIncomingCall[]>;
 	/** Find outgoing calls (callees) */
-	outgoingCalls(item: LSPCallHierarchyItem): Promise<LSPCallHierarchyOutgoingCall[]>;
+	outgoingCalls(
+		item: LSPCallHierarchyItem,
+	): Promise<LSPCallHierarchyOutgoingCall[]>;
 	shutdown(): Promise<void>;
 }
 
@@ -147,6 +153,46 @@ export async function createLSPClient(options: {
 	initialization?: Record<string, unknown>;
 }): Promise<LSPClientInfo> {
 	const { serverId, process: lspProcess, root, initialization } = options;
+
+	// Attach persistent 'error' listeners to all three stdio streams.
+	//
+	// Why: when the LSP process exits, Node.js destroys its stdio streams and
+	// may emit 'error' (ERR_STREAM_DESTROYED / EPIPE / ECONNRESET) on them.
+	// Without a listener that becomes an uncaught exception.
+	//
+	// vscode-jsonrpc attaches its own error listeners to stdin/stdout via
+	// WritableStreamWrapper / ReadableStreamWrapper, but those listeners are
+	// removed when connection.dispose() is called. Our listeners are permanent
+	// so they cover the window between dispose() and process.kill(), as well as
+	// any cases where the process dies before the connection is set up.
+	//
+	// stderr: nobody else ever attaches an error listener here.
+	// stdout: vscode-jsonrpc covers it during the connection lifetime, but not
+	//         after dispose(). After dispose() the stream is about to be
+	//         destroyed anyway, so we just swallow the error.
+	const streamErrorHandler =
+		(label: string) => (err: Error & { code?: string }) => {
+			if (
+				err.code === "ERR_STREAM_DESTROYED" ||
+				err.code === "EPIPE" ||
+				err.code === "ECONNRESET"
+			)
+				return;
+			console.error(`[lsp] ${serverId} ${label} stream error:`, err.message);
+		};
+
+	(lspProcess.stdin as NodeJS.WritableStream).on(
+		"error",
+		streamErrorHandler("stdin"),
+	);
+	(lspProcess.stdout as NodeJS.ReadableStream).on(
+		"error",
+		streamErrorHandler("stdout"),
+	);
+	(lspProcess.stderr as NodeJS.ReadableStream).on(
+		"error",
+		streamErrorHandler("stderr"),
+	);
 
 	// Create JSON-RPC connection
 	const connection = createMessageConnection(
@@ -205,9 +251,41 @@ export async function createLSPClient(options: {
 	// Start listening
 	connection.listen();
 
-	// Send initialize request
-	await withTimeout(
-		connection.sendRequest("initialize", {
+	// Track connection state
+	let isConnected = true;
+	let lastError: Error | undefined;
+	let isDestroyed = false;
+
+	// Handle connection errors and close events
+	connection.onError((error) => {
+		lastError = error instanceof Error ? error : new Error(String(error));
+		isConnected = false;
+		isDestroyed = true;
+		console.error(`[lsp] ${serverId} connection error:`, lastError.message);
+	});
+
+	connection.onClose(() => {
+		isConnected = false;
+		isDestroyed = true;
+	});
+
+	// Also handle process exit to catch crashes immediately
+	lspProcess.process.on("exit", (code) => {
+		if (code !== 0 && code !== null) {
+			isConnected = false;
+			isDestroyed = true;
+			console.error(`[lsp] ${serverId} process exited with code ${code}`);
+		}
+	});
+
+	// Helper to check if process is still alive before operations
+	function isProcessAlive(): boolean {
+		return isConnected && !isDestroyed && !lspProcess.process.killed;
+	}
+
+	// Send initialize request with error handling
+	const initResult = await withTimeout(
+		safeSendRequest(connection, "initialize", {
 			processId: process.pid,
 			rootUri: pathToFileURL(root).href,
 			workspaceFolders: [
@@ -242,12 +320,19 @@ export async function createLSPClient(options: {
 		INITIALIZE_TIMEOUT_MS,
 	);
 
+	if (initResult === undefined) {
+		throw new Error(
+			`[lsp] ${serverId} failed to initialize - stream may have been destroyed. ` +
+				`The server binary may be missing or crashed immediately. Try reinstalling: npm install -g ${serverId}-language-server`,
+		);
+	}
+
 	// Send initialized notification
-	await connection.sendNotification("initialized", {});
+	await safeSendNotification(connection, "initialized", {});
 
 	// Send configuration if provided (helps pyright and other servers)
 	if (initialization) {
-		await connection.sendNotification("workspace/didChangeConfiguration", {
+		await safeSendNotification(connection, "workspace/didChangeConfiguration", {
 			settings: initialization,
 		});
 	}
@@ -259,9 +344,11 @@ export async function createLSPClient(options: {
 		serverId,
 		root,
 		connection,
+		isAlive: () => isProcessAlive(),
 
 		notify: {
 			async open(filePath, content, languageId) {
+				if (!isProcessAlive()) return;
 				const uri = pathToFileURL(filePath).href;
 				// Normalize path for Windows case-insensitive lookup
 				const normalizedPath = normalizeMapKey(filePath);
@@ -269,16 +356,22 @@ export async function createLSPClient(options: {
 				diagnostics.delete(normalizedPath); // Clear stale diagnostics
 
 				// Send workspace notification first (like opencode does)
-				await connection.sendNotification("workspace/didChangeWatchedFiles", {
-					changes: [
-						{
-							uri,
-							type: 1, // Created
-						},
-					],
-				});
+				await safeSendNotification(
+					connection,
+					"workspace/didChangeWatchedFiles",
+					{
+						changes: [
+							{
+								uri,
+								type: 1, // Created
+							},
+						],
+					},
+				);
 
-				await connection.sendNotification("textDocument/didOpen", {
+				if (!isProcessAlive()) return;
+
+				await safeSendNotification(connection, "textDocument/didOpen", {
 					textDocument: {
 						uri,
 						languageId,
@@ -289,13 +382,14 @@ export async function createLSPClient(options: {
 			},
 
 			async change(filePath, content) {
+				if (!isProcessAlive()) return;
 				const uri = pathToFileURL(filePath).href;
 				// Normalize path for Windows case-insensitive lookup
 				const normalizedPath = normalizeMapKey(filePath);
 				const version = (documentVersions.get(normalizedPath) ?? 0) + 1;
 				documentVersions.set(normalizedPath, version);
 
-				await connection.sendNotification("textDocument/didChange", {
+				await safeSendNotification(connection, "textDocument/didChange", {
 					textDocument: { uri, version },
 					contentChanges: [{ text: content }],
 				});
@@ -350,138 +444,130 @@ export async function createLSPClient(options: {
 		},
 
 		async definition(filePath, line, character) {
+			if (!isProcessAlive()) return [];
 			const uri = pathToFileURL(filePath).href;
-			try {
-				const result = await connection.sendRequest("textDocument/definition", {
+			const result = await safeSendRequest<LSPLocation | LSPLocation[]>(
+				connection,
+				"textDocument/definition",
+				{
 					textDocument: { uri },
 					position: { line, character },
-				});
-				if (!result) return [];
-				return Array.isArray(result) ? result : [result];
-			} catch {
-				return [];
-			}
+				},
+			);
+			if (!result) return [];
+			return Array.isArray(result) ? result : [result];
 		},
 
 		async references(filePath, line, character, includeDeclaration = true) {
+			if (!isProcessAlive()) return [];
 			const uri = pathToFileURL(filePath).href;
-			try {
-				const result = await connection.sendRequest("textDocument/references", {
+			const result = await safeSendRequest<LSPLocation[]>(
+				connection,
+				"textDocument/references",
+				{
 					textDocument: { uri },
 					position: { line, character },
 					context: { includeDeclaration },
-				});
-				return Array.isArray(result) ? result : [];
-			} catch {
-				return [];
-			}
+				},
+			);
+			return result ?? [];
 		},
 
 		async hover(filePath, line, character) {
+			if (!isProcessAlive()) return null;
 			const uri = pathToFileURL(filePath).href;
-			try {
-				return (await connection.sendRequest("textDocument/hover", {
+			const result = await safeSendRequest<LSPHover>(
+				connection,
+				"textDocument/hover",
+				{
 					textDocument: { uri },
 					position: { line, character },
-				})) as LSPHover | null;
-			} catch {
-				return null;
-			}
+				},
+			);
+			return result ?? null;
 		},
 
 		async documentSymbol(filePath) {
+			if (!isProcessAlive()) return [];
 			const uri = pathToFileURL(filePath).href;
-			try {
-				const result = await connection.sendRequest(
-					"textDocument/documentSymbol",
-					{
-						textDocument: { uri },
-					},
-				);
-				return Array.isArray(result) ? result : [];
-			} catch {
-				return [];
-			}
+			const result = await safeSendRequest<LSPSymbol[]>(
+				connection,
+				"textDocument/documentSymbol",
+				{
+					textDocument: { uri },
+				},
+			);
+			return result ?? [];
 		},
 
 		async workspaceSymbol(query) {
-			try {
-				const result = await connection.sendRequest("workspace/symbol", {
+			if (!isProcessAlive()) return [];
+			const result = await safeSendRequest<LSPSymbol[]>(
+				connection,
+				"workspace/symbol",
+				{
 					query,
-				});
-				return Array.isArray(result) ? result : [];
-			} catch {
-				return [];
-			}
+				},
+			);
+			return result ?? [];
 		},
 
 		async implementation(filePath, line, character) {
+			if (!isProcessAlive()) return [];
 			const uri = pathToFileURL(filePath).href;
-			try {
-				const result = await connection.sendRequest(
-					"textDocument/implementation",
-					{
-						textDocument: { uri },
-						position: { line, character },
-					},
-				);
-				if (!result) return [];
-				return Array.isArray(result) ? result : [result];
-			} catch {
-				return [];
-			}
+			const result = await safeSendRequest<LSPLocation | LSPLocation[]>(
+				connection,
+				"textDocument/implementation",
+				{
+					textDocument: { uri },
+					position: { line, character },
+				},
+			);
+			if (!result) return [];
+			return Array.isArray(result) ? result : [result];
 		},
 
 		// --- Call Hierarchy Methods ---
 
 		async prepareCallHierarchy(filePath, line, character) {
+			if (!isProcessAlive()) return [];
 			const uri = pathToFileURL(filePath).href;
-			try {
-				const result = await connection.sendRequest(
-					"textDocument/prepareCallHierarchy",
-					{
-						textDocument: { uri },
-						position: { line, character },
-					},
-				);
-				if (!result) return [];
-				return Array.isArray(result) ? result : [result];
-			} catch {
-				return [];
-			}
+			const result = await safeSendRequest<
+				LSPCallHierarchyItem | LSPCallHierarchyItem[]
+			>(connection, "textDocument/prepareCallHierarchy", {
+				textDocument: { uri },
+				position: { line, character },
+			});
+			if (!result) return [];
+			return Array.isArray(result) ? result : [result];
 		},
 
 		async incomingCalls(item) {
-			try {
-				const result = await connection.sendRequest(
-					"callHierarchy/incomingCalls",
-					{
-						item,
-					},
-				);
-				if (!result) return [];
-				return Array.isArray(result) ? result : [];
-			} catch {
-				return [];
-			}
+			if (!isProcessAlive()) return [];
+			const result = await safeSendRequest<LSPCallHierarchyIncomingCall[]>(
+				connection,
+				"callHierarchy/incomingCalls",
+				{
+					item,
+				},
+			);
+			return result ?? [];
 		},
 
 		async outgoingCalls(item) {
-			try {
-				const result = await connection.sendRequest(
-					"callHierarchy/outgoingCalls",
-					{
-						item,
-					},
-				);
-				if (!result) return [];
-				return Array.isArray(result) ? result : [];
-			} catch {
-				return [];
-			}
+			if (!isProcessAlive()) return [];
+			const result = await safeSendRequest<LSPCallHierarchyOutgoingCall[]>(
+				connection,
+				"callHierarchy/outgoingCalls",
+				{
+					item,
+				},
+			);
+			return result ?? [];
 		},
 
 		async shutdown() {
+			isConnected = false;
 			// Clear pending timers
 			for (const timer of pendingDiagnostics.values()) {
 				clearTimeout(timer);
@@ -491,21 +577,74 @@ export async function createLSPClient(options: {
 			// Remove all diagnostic listeners (cancels any in-flight waitForDiagnostics)
 			diagnosticEmitter.removeAllListeners();
 
-			// Graceful shutdown
+			// Graceful shutdown - ignore errors from destroyed streams
 			try {
-				await connection.sendRequest("shutdown");
-				await connection.sendNotification("exit");
+				await safeSendRequest(connection, "shutdown", {});
+			} catch {
+				/* ignore */
+			}
+			try {
+				await safeSendNotification(connection, "exit", {});
 			} catch {
 				/* ignore */
 			}
 
+			connection.end();
 			connection.dispose();
 			lspProcess.process.kill();
 		},
 	};
 }
 
-// --- Utilities ---
+// Helper to safely send notifications - catches stream destruction
+async function safeSendNotification(
+	connection: MessageConnection,
+	method: string,
+	params: unknown,
+): Promise<void> {
+	try {
+		await connection.sendNotification(method as never, params as never);
+	} catch (err) {
+		if (isStreamError(err)) {
+			// Silently ignore - stream was destroyed, connection error handlers will update state
+			return;
+		}
+		throw err;
+	}
+}
+
+// Helper to safely send requests - catches stream destruction
+async function safeSendRequest<T>(
+	connection: MessageConnection,
+	method: string,
+	params: unknown,
+): Promise<T | undefined> {
+	try {
+		return (await connection.sendRequest(
+			method as never,
+			params as never,
+		)) as T;
+	} catch (err) {
+		if (isStreamError(err)) {
+			// Silently ignore - stream was destroyed
+			return undefined;
+		}
+		throw err;
+	}
+}
+
+// Helper to detect stream destruction errors
+function isStreamError(err: unknown): boolean {
+	if (!(err instanceof Error)) return false;
+	const msg = err.message.toLowerCase();
+	return (
+		msg.includes("stream") ||
+		msg.includes("destroyed") ||
+		msg.includes("closed") ||
+		(err as { code?: string }).code === "ERR_STREAM_DESTROYED" ||
+		(err as { code?: string }).code === "EPIPE"
+	);
+}
 
 // Using shared path utilities from path-utils.ts
 
