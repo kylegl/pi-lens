@@ -366,7 +366,7 @@ export async function handleBooboo(
 				});
 
 				let fullSection = `## Semantic Duplicates (Amain Algorithm)\n\n`;
-				fullSection += `**${topPairs.length} pair(s) with >75% semantic similarity**\n\n`;
+				fullSection += `**${topPairs.length} pair(s) with >90% semantic similarity**\n\n`;
 				fullSection +=
 					"Functions with different names/variables but similar logic structures.\n\n";
 
@@ -1269,7 +1269,7 @@ function findTopSimilarPairs(
 
 			const similarity = calculateSimilarity(entry1.matrix, entry2.matrix);
 
-			if (similarity >= 0.75) {
+			if (similarity >= 0.9) {
 				// Canonical pair key (sorted to avoid duplicates)
 				const pairKey = [entry1.id, entry2.id].sort().join("::");
 				if (seenPairs.has(pairKey)) continue;
