@@ -9,6 +9,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as ts from "typescript";
 import { EXCLUDED_DIRS } from "../../file-utils.js";
+import { NativeRustCoreClient } from "../../native-rust-client.js";
 import {
 	buildProjectIndex,
 	findSimilarFunctions,
@@ -23,12 +24,18 @@ import type {
 	RunnerResult,
 } from "../types.js";
 
+// Singleton Rust client — initialised once, reused across runner invocations.
+const rustClient = new NativeRustCoreClient();
+
+/** Feature flag: set to false to force the pure-TypeScript path. */
+const USE_RUST = true;
+
 // ============================================================================
 // Configuration
 // ============================================================================
 
 const CONFIG = {
-	SIMILARITY_THRESHOLD: 0.75, // 75% minimum similarity
+	SIMILARITY_THRESHOLD: 0.9, // 90% minimum similarity — below this false positives dominate
 	MIN_TRANSITIONS: 20, // Skip functions with <20 AST transitions
 	MAX_SUGGESTIONS: 3, // Max 3 suggestions per file
 	USAGE_THRESHOLD: 2, // Only suggest utilities with 2+ uses (placeholder)
@@ -63,6 +70,24 @@ const similarityRunner: RunnerDefinition = {
 		if (!projectRoot) {
 			return { status: "skipped", diagnostics: [], semantic: "none" };
 		}
+
+		// ── Rust fast-path ─────────────────────────────────────────────────────
+		// Try Rust for file scanning + similarity detection. If the Rust binary
+		// is available, use it. On any failure, fall through to the pure-TS path.
+		if (USE_RUST && rustClient.isAvailable()) {
+			try {
+				const rustResult = await runWithRust(
+					filePath,
+					projectRoot,
+					CONFIG.SIMILARITY_THRESHOLD,
+					CONFIG.MAX_SUGGESTIONS,
+				);
+				if (rustResult !== null) return rustResult;
+			} catch {
+				// Fall through to TypeScript implementation.
+			}
+		}
+		// ── TypeScript fallback ─────────────────────────────────────────────────
 
 		const index = await loadOrBuildIndex(projectRoot);
 		if (!index || index.entries.size === 0) {
@@ -259,6 +284,80 @@ function buildSuggestionMessage(
 	const location = `${file}:1`; // TODO: get actual line
 
 	return `Function '${func.name}' has ${similarityPct}% similarity to existing utility '${name}()' in ${location}. Consider reusing the existing utility.`;
+}
+
+// ============================================================================
+// Rust fast-path
+// ============================================================================
+
+/**
+ * Run similarity detection via the Rust binary.
+ *
+ * Flow:
+ * 1. Scan project files with Rust (respects .gitignore, much faster than glob).
+ * 2. Build the Rust index (persisted to .pi-lens/rust-index.json).
+ * 3. Query similarity for the current file.
+ * 4. Convert matches to Diagnostics.
+ *
+ * Returns `null` if the Rust path cannot produce results (no matches is still
+ * a valid result — returned as an empty-diagnostic RunnerResult).
+ */
+async function runWithRust(
+	filePath: string,
+	projectRoot: string,
+	threshold: number,
+	maxSuggestions: number,
+): Promise<RunnerResult | null> {
+	// 1. Scan project files.
+	const scanned = await rustClient.scanProject(projectRoot, [".ts", ".tsx"]);
+	if (scanned.length === 0) return null;
+
+	const relativeFiles = scanned.map((e) =>
+		path.relative(projectRoot, e.path).replace(/\\/g, "/"),
+	);
+
+	// 2. Build index (saves to .pi-lens/rust-index.json).
+	await rustClient.buildIndex(projectRoot, relativeFiles);
+
+	// 3. Find similarities for the current file.
+	const matches = await rustClient.findSimilarities(
+		projectRoot,
+		filePath,
+		threshold,
+	);
+
+	if (matches.length === 0) {
+		return { status: "succeeded", diagnostics: [], semantic: "none" };
+	}
+
+	// 4. Convert to Diagnostics.
+	const diagnostics: Diagnostic[] = matches
+		.slice(0, maxSuggestions)
+		.map((m) => {
+			const similarityPct = Math.round(m.similarity * 100);
+			// source_id format: "path/to/file.ts::funcName@line"
+			const [srcFile, srcFunc] = m.source_id.split("::");
+			const [targetFile, targetFunc] = m.target_id.split("::");
+			const funcName = srcFunc?.split("@")[0] ?? "?";
+			const targetName = targetFunc?.split("@")[0] ?? "?";
+			void srcFile; // file is implicit (it's the current file)
+			return {
+				id: `similarity-rust-${m.source_id}-${m.target_id}`,
+				tool: "similarity",
+				filePath,
+				line: 1, // Rust gives us the function source_id; line resolution is TODO
+				column: 1,
+				message: `Function '${funcName}' has ${similarityPct}% similarity to '${targetName}()' in ${targetFile}. Consider reusing the existing utility.`,
+				severity: "warning" as const,
+				semantic: "warning" as const,
+			};
+		});
+
+	return {
+		status: "succeeded",
+		diagnostics,
+		semantic: diagnostics.length > 0 ? "warning" : "none",
+	};
 }
 
 // ============================================================================
