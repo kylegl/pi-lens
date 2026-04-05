@@ -53,15 +53,19 @@ Used by:
 - Madge: Only check deps if imports changed
 - Cycle detection: Prevents infinite fix loops
 
-### 5. Runner Internal Caches
+### 5. Tree-sitter Caches
 
-| Runner | Cache | Notes |
-|--------|-------|-------|
-| `tree-sitter` | Compiled query cache | `.wasm-cache` files with mtime-based invalidation |
-| `ast-grep-napi` | Rule descriptions | Loaded once per session |
-| `biome` | Tool availability | Checked once, cached |
-| `pyright` | Command path | Venv lookup cached |
-| `ruff` | Command path | Venv lookup cached |
+| Component | Location | Strategy | Details |
+|-----------|----------|----------|---------|
+| **TreeCache** | `clients/tree-sitter-cache.ts` | SHA-256 content hash + mtime | Parsed ASTs cached by file content; 50-file LRU; mtime check for invalidation |
+| **Query Cache** | `clients/tree-sitter-client.ts` | In-memory Map | Compiled tree-sitter queries cached per language |
+| **Navigator** | `clients/tree-sitter-navigator.ts` | Runtime scope detection | Parent/sibling traversal, test block detection, try-catch detection |
+
+**TreeCache implementation:**
+- SHA-256 hashing of file content for cache keys
+- mtime tracking for fast invalidation checks
+- LRU eviction when cache exceeds 50 files
+- `incrementalUpdate()` API ready for full incremental parsing when old content is tracked
 
 ## Cache Invalidation
 
