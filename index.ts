@@ -922,6 +922,38 @@ export default function (pi: ExtensionAPI) {
 			projectRoot = cwd; // Module-level for architect client
 			dbg(`session_start cwd: ${cwd}`);
 
+			// Pre-install prettier if the project uses it but it's not on PATH.
+			// Only installs once (ensureTool is a no-op if already present).
+			// Fire-and-forget so session start is not blocked.
+			{
+				const pkgPath = path.join(cwd, "package.json");
+				try {
+					const raw = await nodeFs.promises.readFile(pkgPath, "utf-8");
+					const pkg = JSON.parse(raw) as {
+						dependencies?: Record<string, string>;
+						devDependencies?: Record<string, string>;
+						prettier?: unknown;
+					};
+					const usesPrettier =
+						!!pkg.devDependencies?.prettier ||
+						!!pkg.dependencies?.prettier ||
+						pkg.prettier !== undefined;
+					if (usesPrettier) {
+						dbg("session_start: project uses prettier, ensuring install...");
+						ensureTool("prettier")
+							.then((p) => {
+								if (p) dbg(`session_start: prettier ready at ${p}`);
+								else dbg("session_start: prettier install failed silently");
+							})
+							.catch((err) =>
+								dbg(`session_start: prettier install error: ${err}`),
+							);
+					}
+				} catch {
+					// No package.json at cwd root — skip
+				}
+			}
+
 			// Load architect rules if present
 			const hasArchitectRules = architectClient.loadConfig(cwd);
 			if (hasArchitectRules) tools.push("Architect rules");

@@ -89,6 +89,15 @@ const TOOLS: ToolDefinition[] = [
 	},
 	// Linting/formatting tools
 	{
+		id: "prettier",
+		name: "Prettier",
+		checkCommand: "prettier",
+		checkArgs: ["--version"],
+		installStrategy: "npm",
+		packageName: "prettier",
+		binaryName: "prettier",
+	},
+	{
 		id: "ruff",
 		name: "Ruff",
 		checkCommand: "ruff",
@@ -366,7 +375,9 @@ async function installNpmTool(
 			proc.on("error", (err) => reject(err));
 		});
 	} catch (err) {
-		console.error(`[auto-install] Failed to install ${packageName}: ${(err as Error).message}`);
+		console.error(
+			`[auto-install] Failed to install ${packageName}: ${(err as Error).message}`,
+		);
 		debugLog("Full error:", err);
 		return undefined;
 	}
@@ -400,7 +411,9 @@ async function installPipTool(
 			proc.on("error", (err) => reject(err));
 		});
 	} catch (err) {
-		console.error(`[auto-install] Failed to install ${packageName}: ${(err as Error).message}`);
+		console.error(
+			`[auto-install] Failed to install ${packageName}: ${(err as Error).message}`,
+		);
 		debugLog("Full error:", err);
 		return undefined;
 	}
@@ -439,7 +452,9 @@ export async function installTool(toolId: string): Promise<boolean> {
 				return false;
 		}
 	} catch (err) {
-		console.error(`[auto-install] Failed to install ${tool.name}: ${(err as Error).message}`);
+		console.error(
+			`[auto-install] Failed to install ${tool.name}: ${(err as Error).message}`,
+		);
 		debugLog("Full error:", err);
 		return false;
 	}

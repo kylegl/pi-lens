@@ -111,10 +111,10 @@ export const biomeFormatter: FormatterInfo = {
 		const found = await findUp(configs, cwd);
 		if (found.length > 0) return true;
 
-		// Check if biome is in package.json devDependencies
-		const pkgPath = path.join(cwd, "package.json");
-		if (await fileExists(pkgPath)) {
-			const pkg = (await readJson(pkgPath)) as {
+		// Check if biome is in the nearest package.json devDependencies
+		const pkgPaths = await findUp(["package.json"], cwd);
+		if (pkgPaths.length > 0) {
+			const pkg = (await readJson(pkgPaths[0])) as {
 				devDependencies?: Record<string, string>;
 			};
 			if (pkg.devDependencies?.["@biomejs/biome"]) return true;
@@ -168,10 +168,10 @@ export const prettierFormatter: FormatterInfo = {
 		const found = await findUp(configs, cwd);
 		if (found.length > 0) return true;
 
-		// Check package.json
-		const pkgPath = path.join(cwd, "package.json");
-		if (await fileExists(pkgPath)) {
-			const pkg = (await readJson(pkgPath)) as {
+		// Check the nearest package.json for prettier
+		const pkgPaths = await findUp(["package.json"], cwd);
+		if (pkgPaths.length > 0) {
+			const pkg = (await readJson(pkgPaths[0])) as {
 				devDependencies?: Record<string, string>;
 				dependencies?: Record<string, string>;
 				prettier?: unknown;
@@ -403,6 +403,68 @@ export const terraformFormatter: FormatterInfo = {
 	},
 };
 
+export const phpCsFixerFormatter: FormatterInfo = {
+	name: "php-cs-fixer",
+	command: ["php-cs-fixer", "fix", "$FILE"],
+	extensions: [".php"],
+	async detect(cwd: string) {
+		if ((await which("php-cs-fixer")) === null) return false;
+		// Only run if project has explicit config
+		const configs = [".php-cs-fixer.php", ".php-cs-fixer.dist.php"];
+		const found = await findUp(configs, cwd);
+		return found.length > 0;
+	},
+};
+
+export const csharpierFormatter: FormatterInfo = {
+	name: "csharpier",
+	command: ["dotnet", "csharpier", "$FILE"],
+	extensions: [".cs"],
+	async detect(_cwd: string) {
+		return (await which("dotnet")) !== null;
+	},
+};
+
+export const fantomasFormatter: FormatterInfo = {
+	name: "fantomas",
+	command: ["fantomas", "$FILE"],
+	extensions: [".fs", ".fsi", ".fsx"],
+	async detect(_cwd: string) {
+		return (await which("fantomas")) !== null;
+	},
+};
+
+export const swiftformatFormatter: FormatterInfo = {
+	name: "swiftformat",
+	command: ["swiftformat", "$FILE"],
+	extensions: [".swift"],
+	async detect(_cwd: string) {
+		return (await which("swiftformat")) !== null;
+	},
+};
+
+export const styluaFormatter: FormatterInfo = {
+	name: "stylua",
+	command: ["stylua", "$FILE"],
+	extensions: [".lua"],
+	async detect(cwd: string) {
+		if ((await which("stylua")) === null) return false;
+		// Prefer explicit config but also run if binary is present in a Lua project
+		const configs = ["stylua.toml", ".stylua.toml"];
+		const found = await findUp(configs, cwd);
+		return found.length > 0;
+	},
+};
+
+export const ormoluFormatter: FormatterInfo = {
+	name: "ormolu",
+	command: ["ormolu", "--mode", "inplace", "$FILE"],
+	extensions: [".hs", ".lhs"],
+	async detect(_cwd: string) {
+		return (await which("ormolu")) !== null;
+	},
+};
+
 // --- Registry ---
 
 const ALL_FORMATTERS: FormatterInfo[] = [
@@ -421,6 +483,12 @@ const ALL_FORMATTERS: FormatterInfo[] = [
 	clangFormatFormatter,
 	ktlintFormatter,
 	terraformFormatter,
+	phpCsFixerFormatter,
+	csharpierFormatter,
+	fantomasFormatter,
+	swiftformatFormatter,
+	styluaFormatter,
+	ormoluFormatter,
 	rubocopFormatter,
 	standardrbFormatter,
 	gleamFormatter,

@@ -446,16 +446,21 @@ export const RubyServer: LSPServerInfo = {
 	extensions: [".rb", ".rake", ".gemspec", ".ru"],
 	root: createRootDetector(["Gemfile", ".ruby-version"]),
 	async spawn(root) {
-		// Try ruby-lsp first, fall back to solargraph
-		try {
-			const proc = await launchLSP("ruby-lsp", [], { cwd: root });
-			return { process: proc };
-		} catch {
-			const proc = await launchViaPackageManager("solargraph", ["stdio"], {
-				cwd: root,
-			});
-			return { process: proc };
-		}
+		// Try ruby-lsp first (prompts to install via gem if missing), fall back to solargraph
+		const proc = await spawnWithInteractiveInstall(
+			"ruby",
+			"ruby-lsp",
+			[],
+			{ cwd: root },
+			async () => {
+				try {
+					return await launchLSP("ruby-lsp", [], { cwd: root });
+				} catch {
+					return await launchViaPackageManager("solargraph", ["stdio"], { cwd: root });
+				}
+			},
+		);
+		return proc ? { process: proc } : undefined;
 	},
 };
 
@@ -481,8 +486,14 @@ export const CSharpServer: LSPServerInfo = {
 	extensions: [".cs"],
 	root: createRootDetector([".sln", ".csproj", ".slnx"]),
 	async spawn(root) {
-		const proc = await launchLSP("csharp-ls", [], { cwd: root });
-		return { process: proc };
+		const proc = await spawnWithInteractiveInstall(
+			"csharp",
+			"csharp-ls",
+			[],
+			{ cwd: root },
+			async () => await launchLSP("csharp-ls", [], { cwd: root }),
+		);
+		return proc ? { process: proc } : undefined;
 	},
 };
 
@@ -492,8 +503,14 @@ export const FSharpServer: LSPServerInfo = {
 	extensions: [".fs", ".fsi", ".fsx"],
 	root: createRootDetector([".sln", ".fsproj"]),
 	async spawn(root) {
-		const proc = await launchLSP("fsautocomplete", [], { cwd: root });
-		return { process: proc };
+		const proc = await spawnWithInteractiveInstall(
+			"fsharp",
+			"fsautocomplete",
+			[],
+			{ cwd: root },
+			async () => await launchLSP("fsautocomplete", [], { cwd: root }),
+		);
+		return proc ? { process: proc } : undefined;
 	},
 };
 
@@ -503,10 +520,15 @@ export const JavaServer: LSPServerInfo = {
 	extensions: [".java"],
 	root: createRootDetector(["pom.xml", "build.gradle", ".classpath"]),
 	async spawn(root) {
-		// JDTLS requires special handling - paths to launcher jar
 		const jdtlsPath = process.env.JDTLS_PATH || "jdtls";
-		const proc = await launchLSP(jdtlsPath, [], { cwd: root });
-		return { process: proc };
+		const proc = await spawnWithInteractiveInstall(
+			"java",
+			jdtlsPath,
+			[],
+			{ cwd: root },
+			async () => await launchLSP(jdtlsPath, [], { cwd: root }),
+		);
+		return proc ? { process: proc } : undefined;
 	},
 };
 
@@ -516,8 +538,14 @@ export const KotlinServer: LSPServerInfo = {
 	extensions: [".kt", ".kts"],
 	root: createRootDetector(["build.gradle.kts", "build.gradle", "pom.xml"]),
 	async spawn(root) {
-		const proc = await launchLSP("kotlin-language-server", [], { cwd: root });
-		return { process: proc };
+		const proc = await spawnWithInteractiveInstall(
+			"kotlin",
+			"kotlin-language-server",
+			[],
+			{ cwd: root },
+			async () => await launchLSP("kotlin-language-server", [], { cwd: root }),
+		);
+		return proc ? { process: proc } : undefined;
 	},
 };
 
@@ -527,8 +555,14 @@ export const SwiftServer: LSPServerInfo = {
 	extensions: [".swift"],
 	root: createRootDetector(["Package.swift"]),
 	async spawn(root) {
-		const proc = await launchLSP("sourcekit-lsp", [], { cwd: root });
-		return { process: proc };
+		const proc = await spawnWithInteractiveInstall(
+			"swift",
+			"sourcekit-lsp",
+			[],
+			{ cwd: root },
+			async () => await launchLSP("sourcekit-lsp", [], { cwd: root }),
+		);
+		return proc ? { process: proc } : undefined;
 	},
 };
 
@@ -538,14 +572,15 @@ export const DartServer: LSPServerInfo = {
 	extensions: [".dart"],
 	root: createRootDetector(["pubspec.yaml"]),
 	async spawn(root) {
-		const proc = await launchLSP(
+		const proc = await spawnWithInteractiveInstall(
+			"dart",
 			"dart",
 			["language-server", "--protocol=lsp"],
-			{
-				cwd: root,
-			},
+			{ cwd: root },
+			async () =>
+				await launchLSP("dart", ["language-server", "--protocol=lsp"], { cwd: root }),
 		);
-		return { process: proc };
+		return proc ? { process: proc } : undefined;
 	},
 };
 
@@ -555,8 +590,14 @@ export const LuaServer: LSPServerInfo = {
 	extensions: [".lua"],
 	root: createRootDetector([".luarc.json", ".luacheckrc"]),
 	async spawn(root) {
-		const proc = await launchLSP("lua-language-server", [], { cwd: root });
-		return { process: proc };
+		const proc = await spawnWithInteractiveInstall(
+			"lua",
+			"lua-language-server",
+			[],
+			{ cwd: root },
+			async () => await launchLSP("lua-language-server", [], { cwd: root }),
+		);
+		return proc ? { process: proc } : undefined;
 	},
 };
 
@@ -571,10 +612,14 @@ export const CppServer: LSPServerInfo = {
 		"Makefile",
 	]),
 	async spawn(root) {
-		const proc = await launchLSP("clangd", ["--background-index"], {
-			cwd: root,
-		});
-		return { process: proc };
+		const proc = await spawnWithInteractiveInstall(
+			"cpp",
+			"clangd",
+			["--background-index"],
+			{ cwd: root },
+			async () => await launchLSP("clangd", ["--background-index"], { cwd: root }),
+		);
+		return proc ? { process: proc } : undefined;
 	},
 };
 
@@ -584,8 +629,14 @@ export const ZigServer: LSPServerInfo = {
 	extensions: [".zig", ".zon"],
 	root: createRootDetector(["build.zig"]),
 	async spawn(root) {
-		const proc = await launchLSP("zls", [], { cwd: root });
-		return { process: proc };
+		const proc = await spawnWithInteractiveInstall(
+			"zig",
+			"zls",
+			[],
+			{ cwd: root },
+			async () => await launchLSP("zls", [], { cwd: root }),
+		);
+		return proc ? { process: proc } : undefined;
 	},
 };
 
@@ -595,10 +646,15 @@ export const HaskellServer: LSPServerInfo = {
 	extensions: [".hs", ".lhs"],
 	root: createRootDetector(["stack.yaml", "cabal.project", "*.cabal"]),
 	async spawn(root) {
-		const proc = await launchLSP("haskell-language-server-wrapper", ["--lsp"], {
-			cwd: root,
-		});
-		return { process: proc };
+		const proc = await spawnWithInteractiveInstall(
+			"haskell",
+			"haskell-language-server-wrapper",
+			["--lsp"],
+			{ cwd: root },
+			async () =>
+				await launchLSP("haskell-language-server-wrapper", ["--lsp"], { cwd: root }),
+		);
+		return proc ? { process: proc } : undefined;
 	},
 };
 
@@ -608,8 +664,14 @@ export const ElixirServer: LSPServerInfo = {
 	extensions: [".ex", ".exs"],
 	root: createRootDetector(["mix.exs"]),
 	async spawn(root) {
-		const proc = await launchLSP("elixir-ls", [], { cwd: root });
-		return { process: proc };
+		const proc = await spawnWithInteractiveInstall(
+			"elixir",
+			"elixir-ls",
+			[],
+			{ cwd: root },
+			async () => await launchLSP("elixir-ls", [], { cwd: root }),
+		);
+		return proc ? { process: proc } : undefined;
 	},
 };
 
@@ -619,8 +681,14 @@ export const GleamServer: LSPServerInfo = {
 	extensions: [".gleam"],
 	root: createRootDetector(["gleam.toml"]),
 	async spawn(root) {
-		const proc = await launchLSP("gleam", ["lsp"], { cwd: root });
-		return { process: proc };
+		const proc = await spawnWithInteractiveInstall(
+			"gleam",
+			"gleam",
+			["lsp"],
+			{ cwd: root },
+			async () => await launchLSP("gleam", ["lsp"], { cwd: root }),
+		);
+		return proc ? { process: proc } : undefined;
 	},
 };
 
@@ -630,8 +698,14 @@ export const OCamlServer: LSPServerInfo = {
 	extensions: [".ml", ".mli"],
 	root: createRootDetector(["dune-project", "opam"]),
 	async spawn(root) {
-		const proc = await launchLSP("ocamllsp", [], { cwd: root });
-		return { process: proc };
+		const proc = await spawnWithInteractiveInstall(
+			"ocaml",
+			"ocamllsp",
+			[],
+			{ cwd: root },
+			async () => await launchLSP("ocamllsp", [], { cwd: root }),
+		);
+		return proc ? { process: proc } : undefined;
 	},
 };
 
@@ -641,8 +715,14 @@ export const ClojureServer: LSPServerInfo = {
 	extensions: [".clj", ".cljs", ".cljc", ".edn"],
 	root: createRootDetector(["deps.edn", "project.clj"]),
 	async spawn(root) {
-		const proc = await launchLSP("clojure-lsp", [], { cwd: root });
-		return { process: proc };
+		const proc = await spawnWithInteractiveInstall(
+			"clojure",
+			"clojure-lsp",
+			[],
+			{ cwd: root },
+			async () => await launchLSP("clojure-lsp", [], { cwd: root }),
+		);
+		return proc ? { process: proc } : undefined;
 	},
 };
 
@@ -652,8 +732,14 @@ export const TerraformServer: LSPServerInfo = {
 	extensions: [".tf", ".tfvars"],
 	root: createRootDetector([".terraform.lock.hcl"]),
 	async spawn(root) {
-		const proc = await launchLSP("terraform-ls", ["serve"], { cwd: root });
-		return { process: proc };
+		const proc = await spawnWithInteractiveInstall(
+			"terraform",
+			"terraform-ls",
+			["serve"],
+			{ cwd: root },
+			async () => await launchLSP("terraform-ls", ["serve"], { cwd: root }),
+		);
+		return proc ? { process: proc } : undefined;
 	},
 };
 
@@ -663,8 +749,14 @@ export const NixServer: LSPServerInfo = {
 	extensions: [".nix"],
 	root: createRootDetector(["flake.nix"]),
 	async spawn(root) {
-		const proc = await launchLSP("nixd", [], { cwd: root });
-		return { process: proc };
+		const proc = await spawnWithInteractiveInstall(
+			"nix",
+			"nixd",
+			[],
+			{ cwd: root },
+			async () => await launchLSP("nixd", [], { cwd: root }),
+		);
+		return proc ? { process: proc } : undefined;
 	},
 };
 
