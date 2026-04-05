@@ -2,6 +2,28 @@
 
 All notable changes to pi-lens will be documented in this file.
 
+## [3.7.1] - 2026-04-05
+
+### Added
+- **ESLint dispatch runner** — Projects with `.eslintrc` / `eslint.config.js` (any variant)
+  now run ESLint automatically on every JS/TS file write. Prefers local
+  `node_modules/.bin/eslint` over global. Skips silently on projects using Biome/OxLint
+  (no ESLint config). ESLint errors (severity 2) are blocking; warnings are non-blocking.
+
+- **golangci-lint dispatch runner** — Go projects with `.golangci.yml` / `.golangci.yaml`
+  now run golangci-lint on every `.go` file write (in addition to `go-vet`). Parses JSON
+  output. Skips when no config is present (avoids default-rule noise on non-opted-in
+  projects). 60s timeout.
+
+- **RuboCop dispatch runner** — Ruby files (`.rb`, `.rake`, `.gemspec`, `.ru`) now run
+  RuboCop in lint-only mode on every write. Prefers `bundle exec rubocop` when a Gemfile
+  references rubocop. Fatal/error offenses are blocking; convention/refactor are warnings.
+
+- **`ruby` file kind** — `.rb`, `.rake`, `.gemspec`, `.ru` files are now recognised as
+  `ruby` kind, enabling file-kind-gated runners and formatter detection.
+
+---
+
 ## [3.7.0] - 2026-04-05
 
 ### Added

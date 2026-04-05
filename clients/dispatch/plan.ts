@@ -41,6 +41,8 @@ export const TOOL_PLANS: Record<string, ToolPlan> = {
 			{ mode: "fallback", runnerIds: ["type-safety"], filterKinds: ["jsts"] },
 			// Similarity detection — warns about duplicated/reusable code
 			{ mode: "fallback", runnerIds: ["similarity"], filterKinds: ["jsts"] },
+			// ESLint: only fires when project has eslint config (skips Biome/OxLint projects)
+			{ mode: "fallback", runnerIds: ["eslint"], filterKinds: ["jsts"] },
 			// Note: ast-grep CLI kept for ast_grep_search/ast_grep_replace tools only
 			// Note: biome, oxlint handled by direct auto-fix calls in index.ts (not in dispatch)
 			// Architectural rules (guidance only, not blocking) - runs via /lens-booboo only
@@ -71,8 +73,10 @@ export const TOOL_PLANS: Record<string, ToolPlan> = {
 		groups: [
 			// LSP type checking (gopls)
 			{ mode: "all", runnerIds: ["lsp"], filterKinds: ["go"] },
-			// Go vet for additional checks (warning only, but low cost)
+			// Go vet for additional checks
 			{ mode: "fallback", runnerIds: ["go-vet"], filterKinds: ["go"] },
+			// golangci-lint: only fires when project has .golangci.yml config
+			{ mode: "fallback", runnerIds: ["golangci-lint"], filterKinds: ["go"] },
 			// Architectural rules (guidance only, not blocking) - runs via /lens-booboo only
 		],
 	},
@@ -88,6 +92,16 @@ export const TOOL_PLANS: Record<string, ToolPlan> = {
 			// Cargo clippy for additional checks
 			{ mode: "fallback", runnerIds: ["rust-clippy"], filterKinds: ["rust"] },
 			// Architectural rules (guidance only, not blocking) - runs via /lens-booboo only
+		],
+	},
+
+	/**
+	 * Ruby linting
+	 */
+	ruby: {
+		name: "Ruby Linting",
+		groups: [
+			{ mode: "fallback", runnerIds: ["rubocop"], filterKinds: ["ruby"] },
 		],
 	},
 
@@ -182,6 +196,7 @@ export const FULL_LINT_PLANS: Record<string, ToolPlan> = {
 			{ mode: "fallback", runnerIds: ["type-safety"], filterKinds: ["jsts"] },
 			{ mode: "fallback", runnerIds: ["similarity"], filterKinds: ["jsts"] },
 			{ mode: "fallback", runnerIds: ["architect"], filterKinds: ["jsts"] },
+			{ mode: "fallback", runnerIds: ["eslint"], filterKinds: ["jsts"] },
 		],
 	},
 	// Override python to include warning-only tools

@@ -7,11 +7,14 @@ import architectRunner from "./architect.js";
 import astGrepNapiRunner from "./ast-grep-napi.js";
 import biomeRunner from "./biome.js";
 import configValidationRunner from "./config-validation.js";
+import eslintRunner from "./eslint.js";
 import goVetRunner from "./go-vet.js";
+import golangciRunner from "./golangci-lint.js";
 import lspRunner from "./lsp.js";
 import oxlintRunner from "./oxlint.js";
 import pyrightRunner from "./pyright.js";
 import pythonSlopRunner from "./python-slop.js";
+import rubocopRunner from "./rubocop.js";
 import ruffRunner from "./ruff.js";
 import rustClippyRunner from "./rust-clippy.js";
 import shellcheckRunner from "./shellcheck.js";
@@ -44,6 +47,9 @@ registerRunner(shellcheckRunner); // Shell script linting (priority 20)
 // CLI ast-grep kept for ast_grep_search/ast_grep_replace tools only
 registerRunner(similarityRunner); // Semantic reuse detection (priority 35)
 registerRunner(architectRunner); // Architectural rules (priority 40)
+registerRunner(eslintRunner); // ESLint (priority 12, jsts, config-gated)
+registerRunner(golangciRunner); // golangci-lint (priority 20, go, config-gated)
+registerRunner(rubocopRunner); // RuboCop lint (priority 10, ruby)
 registerRunner(spellcheckRunner); // Spellcheck for markdown/docs (priority 30)
 registerRunner(goVetRunner); // Go analysis (priority 50)
 registerRunner(rustClippyRunner); // Rust analysis (priority 50)
