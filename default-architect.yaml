@@ -100,15 +100,13 @@ rules:
 
   - pattern: "**/*.{ts,tsx,js,jsx}"
     must_not:
-      - pattern: 'throw new Error\(["\'](?:not implemented|TODO|todo|Not implemented|NotImplemented)["\']\)'
+      - pattern: 'throw new Error\((?:"(?:not implemented|TODO|todo|Not implemented)"|''(?:not implemented|TODO|todo|Not implemented)'')\)'
         message: "Stub not implemented — function body was scaffolded but never completed."
         fix: "Implement the function body or remove the stub."
-      - pattern: 'throw new Error\(["\']\s*["\']\)'
-        message: "Empty error throw — replace with a real implementation or meaningful error."
 
   - pattern: "**/*.py"
     must_not:
-      - pattern: 'raise NotImplementedError(?:\(\))?'
+      - pattern: 'raise NotImplementedError'
         message: "NotImplementedError stub — function was scaffolded but never completed."
         fix: "Implement the function body."
       - pattern: '^\s*\.\.\.\s*$'

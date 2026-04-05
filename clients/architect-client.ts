@@ -286,7 +286,9 @@ export class ArchitectClient {
 				) {
 					// Extract everything after "pattern:" and unquote
 					const raw = trimmed.replace(/^-?\s*pattern:\s*/, "").trim();
-					const unquoted = raw.replace(/^["']|["']$/g, "");
+					let unquoted = raw.replace(/^["']|["']$/g, "");
+					// Single-quoted YAML: '' is an escaped single-quote
+					if (raw.startsWith("'")) unquoted = unquoted.split("''").join("'");
 					if (unquoted) {
 						violation = { pattern: unquoted, message: "" };
 					}
