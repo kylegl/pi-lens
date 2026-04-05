@@ -18,6 +18,18 @@ import type {
 } from "../types.js";
 import { readFileContent } from "./utils.js";
 
+// Module-level singleton — loadConfig once per cwd, not on every file write
+let _client: ArchitectClient | null = null;
+let _loadedCwd: string | null = null;
+
+function getClient(cwd: string): ArchitectClient {
+	if (_client && _loadedCwd === cwd) return _client;
+	_client = new ArchitectClient();
+	_client.loadConfig(cwd);
+	_loadedCwd = cwd;
+	return _client;
+}
+
 const architectRunner: RunnerDefinition = {
 	id: "architect",
 	appliesTo: ["jsts", "python", "go", "rust", "cxx", "shell", "cmake"],
@@ -33,8 +45,7 @@ const architectRunner: RunnerDefinition = {
 			return { status: "skipped", diagnostics: [], semantic: "none" };
 		}
 
-		const architectClient = new ArchitectClient();
-		architectClient.loadConfig(ctx.cwd);
+		const architectClient = getClient(ctx.cwd);
 
 		if (!architectClient.hasConfig()) {
 			return { status: "skipped", diagnostics: [], semantic: "none" };
@@ -47,16 +58,18 @@ const architectRunner: RunnerDefinition = {
 		for (const v of violations) {
 			// Build message with inline fix guidance
 			let message = v.message;
-			let fixSuggestion: string | undefined = v.fix;
-			
+			const fixSuggestion: string | undefined = v.fix;
+
 			if (v.fix) {
-				const fixPreview = v.fix.length > 60 ? `${v.fix.substring(0, 60)}...` : v.fix;
+				const fixPreview =
+					v.fix.length > 60 ? `${v.fix.substring(0, 60)}...` : v.fix;
 				message += `\n💡 Suggested fix: ${fixPreview}`;
 			} else if (v.note) {
-				const notePreview = v.note.length > 80 ? `${v.note.substring(0, 80)}...` : v.note;
+				const notePreview =
+					v.note.length > 80 ? `${v.note.substring(0, 80)}...` : v.note;
 				message += `\n📝 ${notePreview}`;
 			}
-			
+
 			diagnostics.push({
 				id: `architect-${v.line || 0}-${v.pattern}`,
 				message,

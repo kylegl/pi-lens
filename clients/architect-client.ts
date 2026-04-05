@@ -170,7 +170,7 @@ export class ArchitectClient {
 
 			for (const check of rule.must_not) {
 				// We use 'g' to find all occurrences and correctly report line numbers
-				const regex = new RegExp(check.pattern, "gi");
+				const regex = new RegExp(check.pattern, "gim");
 				let match: RegExpExecArray | null;
 
 				// biome-ignore lint/suspicious/noAssignInExpressions: RegExp.exec iteration

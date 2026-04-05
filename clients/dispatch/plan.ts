@@ -43,9 +43,11 @@ export const TOOL_PLANS: Record<string, ToolPlan> = {
 			{ mode: "fallback", runnerIds: ["similarity"], filterKinds: ["jsts"] },
 			// ESLint: only fires when project has eslint config (skips Biome/OxLint projects)
 			{ mode: "fallback", runnerIds: ["eslint"], filterKinds: ["jsts"] },
+			// Architectural rules: warning-only, fast (pure regex). Needed per-write so the
+			// all-clear signal can report "N warnings -> /lens-booboo" accurately.
+			{ mode: "fallback", runnerIds: ["architect"], filterKinds: ["jsts"] },
 			// Note: ast-grep CLI kept for ast_grep_search/ast_grep_replace tools only
 			// Note: biome, oxlint handled by direct auto-fix calls in index.ts (not in dispatch)
-			// Architectural rules (guidance only, not blocking) - runs via /lens-booboo only
 		],
 	},
 
@@ -60,8 +62,8 @@ export const TOOL_PLANS: Record<string, ToolPlan> = {
 			{ mode: "all", runnerIds: ["pyright"], filterKinds: ["python"] },
 			// LSP type checking (unified) - when --lens-lsp enabled
 			{ mode: "all", runnerIds: ["lsp"], filterKinds: ["python"] },
+			{ mode: "fallback", runnerIds: ["architect"], filterKinds: ["python"] },
 			// Note: ruff handled by direct auto-fix calls in index.ts (not in dispatch)
-			// Architectural rules (guidance only, not blocking) - runs via /lens-booboo only
 		],
 	},
 
