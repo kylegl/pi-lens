@@ -48,14 +48,18 @@ migrate-*.js
 !AGENTS.md
 !README.md
 !CHANGELOG.md
-!AST_GREP_RULES.md
 !docs/LSP_CONFIG.md
 !docs/COMPLEXITY_METRICS.md
 !docs/ARCHITECTURE.md
 !docs/EXCLUSIONS.md
 !docs/AST_GREP_RULES.md
 !docs/TREE_SITTER_RULES.md
+!docs/WRITING_NEW_AST_GREP_RULES.md
 !skills/**/*.md
+
+# Local-only docs (not in git or npm)
+docs/features.md
+docs/plans/
 
 # Auto-generated reports (CAPS)
 ANALYSIS_*.md

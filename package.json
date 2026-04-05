@@ -46,12 +46,20 @@
 		"commands/**/*.ts",
 		"rules/",
 		"skills/",
+		"scripts/download-grammars.ts",
 		"rust/src/",
 		"rust/Cargo.toml",
 		"default-architect.yaml",
 		"tsconfig.json",
 		"README.md",
-		"CHANGELOG.md"
+		"CHANGELOG.md",
+		"docs/LSP_CONFIG.md",
+		"docs/COMPLEXITY_METRICS.md",
+		"docs/ARCHITECTURE.md",
+		"docs/EXCLUSIONS.md",
+		"docs/AST_GREP_RULES.md",
+		"docs/TREE_SITTER_RULES.md",
+		"docs/WRITING_NEW_AST_GREP_RULES.md"
 	],
 	"peerDependencies": {
 		"@mariozechner/pi-coding-agent": "*"
