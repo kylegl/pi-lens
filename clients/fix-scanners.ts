@@ -14,6 +14,10 @@ import * as nodeFs from "node:fs";
 import * as path from "node:path";
 import type { BiomeClient } from "./biome-client.js";
 import type { ComplexityClient } from "./complexity-client.js";
+import {
+	getSgCommand,
+	isSgAvailable,
+} from "./dispatch/runners/utils/runner-helpers.js";
 import { EXCLUDED_DIRS } from "./file-utils.js";
 import type { JscpdClient } from "./jscpd-client.js";
 import type { KnipClient } from "./knip-client.js";
@@ -119,17 +123,13 @@ export function scanAstGrep(
 	isTsProject: boolean,
 	configPath: string,
 ): AstIssue[] {
-	const hasSg =
-		nodeFs.existsSync(path.join(targetPath, "node_modules", ".bin", "sg")) ||
-		safeSpawn("npx", ["sg", "--version"], {
-			timeout: 5000,
-		}).status === 0;
+	if (!isSgAvailable()) return [];
 
-	if (!hasSg) return [];
-
+	const { cmd: sgCmd, args: sgPre } = getSgCommand();
 	const result = safeSpawn(
-		"npx",
+		sgCmd,
 		[
+			...sgPre,
 			"sg",
 			"scan",
 			"--config",

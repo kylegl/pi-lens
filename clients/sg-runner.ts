@@ -9,6 +9,10 @@ import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import {
+	getSgCommand,
+	isSgAvailable,
+} from "./dispatch/runners/utils/runner-helpers.js";
 import { safeSpawn } from "./safe-spawn.js";
 
 /**
@@ -90,10 +94,7 @@ export class SgRunner {
 	isAvailable(): boolean {
 		if (this.available !== null) return this.available;
 
-		const result = safeSpawn("npx", ["sg", "--version"], {
-			timeout: 10000,
-		});
-		this.available = !result.error && result.status === 0;
+		this.available = isSgAvailable();
 		return this.available;
 	}
 
@@ -214,7 +215,8 @@ export class SgRunner {
 	 * Run ast-grep synchronously (for simple scans)
 	 */
 	execSync(args: string[]): { output: string; error?: string } {
-		const result = safeSpawn("npx", ["sg", ...args], {
+		const { cmd: sgCmd, args: sgPre } = getSgCommand();
+		const result = safeSpawn(sgCmd, [...sgPre, "sg", ...args], {
 			timeout: 30000,
 		});
 

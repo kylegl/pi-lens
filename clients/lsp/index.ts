@@ -8,7 +8,6 @@
  * - Resource cleanup
  */
 
-import { Effect } from "effect";
 import type { LSPClientInfo } from "./client.js";
 import { createLSPClient } from "./client.js";
 import { getServersForFileWithConfig } from "./config.js";
@@ -337,45 +336,6 @@ export class LSPService {
 			return { serverId, root, connected: true };
 		});
 	}
-}
-
-// --- Effect Integration ---
-
-/**
- * Effect wrapper for LSP operations
- */
-export function lspEffect(service: LSPService) {
-	return {
-		openFile: (filePath: string, content: string) =>
-			Effect.tryPromise({
-				try: () => service.openFile(filePath, content),
-				catch: (err) => err as Error,
-			}),
-
-		updateFile: (filePath: string, content: string) =>
-			Effect.tryPromise({
-				try: () => service.updateFile(filePath, content),
-				catch: (err) => err as Error,
-			}),
-
-		getDiagnostics: (filePath: string) =>
-			Effect.tryPromise({
-				try: () => service.getDiagnostics(filePath),
-				catch: (err) => err as Error,
-			}),
-
-		hasLSP: (filePath: string) =>
-			Effect.tryPromise({
-				try: () => service.hasLSP(filePath),
-				catch: (err) => err as Error,
-			}),
-
-		shutdown: () =>
-			Effect.tryPromise({
-				try: () => service.shutdown(),
-				catch: (err) => err as Error,
-			}),
-	};
 }
 
 // --- Singleton Instance ---

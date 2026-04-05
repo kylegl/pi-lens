@@ -328,7 +328,8 @@ export async function launchViaPackageManager(
 	// For npx on Windows, use shell mode with the full command string
 	if (isWin) {
 		const argsStr = args.map((a) => (a.includes(" ") ? `"${a}"` : a)).join(" ");
-		const shellCommand = `npx -y ${packageName}${argsStr ? ` ${argsStr}` : ""}`;
+		// --no prevents silent download of uncached packages
+		const shellCommand = `npx --no ${packageName}${argsStr ? ` ${argsStr}` : ""}`;
 
 		const cwd = String(options.cwd ?? process.cwd());
 		const env = { ...process.env, ...options.env };
@@ -393,7 +394,9 @@ export async function launchViaPackageManager(
 		};
 	}
 
-	return launchLSP("npx", ["-y", packageName, ...args], options);
+	// --no prevents silent download of uncached packages; user must have
+	// already installed the LSP server via the interactive-install flow.
+	return launchLSP("npx", ["--no", packageName, ...args], options);
 }
 
 /**

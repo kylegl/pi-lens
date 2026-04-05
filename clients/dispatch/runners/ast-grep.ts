@@ -16,6 +16,7 @@ import type {
 	RunnerDefinition,
 	RunnerResult,
 } from "../types.js";
+import { getSgCommand, isSgAvailable } from "./utils/runner-helpers.js";
 
 // Simple YAML fix: field extractor
 function extractFixFromRule(
@@ -49,12 +50,8 @@ const astGrepRunner: RunnerDefinition = {
 	skipTestFiles: true, // Many rules are noisy in tests
 
 	async run(ctx: DispatchContext): Promise<RunnerResult> {
-		// Check if ast-grep is available (use npx for local installs)
-		const check = await safeSpawnAsync("npx", ["sg", "--version"], {
-			timeout: 5000,
-		});
-
-		if (check.error || check.status !== 0) {
+		// Check if ast-grep is available (local bin preferred over npx)
+		if (!isSgAvailable()) {
 			return { status: "skipped", diagnostics: [], semantic: "none" };
 		}
 
@@ -64,10 +61,18 @@ const astGrepRunner: RunnerDefinition = {
 			return { status: "skipped", diagnostics: [], semantic: "none" };
 		}
 
-		// Run ast-grep scan on the file (use npx for local installs)
-		const args = ["sg", "scan", "--config", configPath, "--json", ctx.filePath];
+		const { cmd: sgCmd, args: sgPre } = getSgCommand();
+		const args = [
+			...sgPre,
+			"sg",
+			"scan",
+			"--config",
+			configPath,
+			"--json",
+			ctx.filePath,
+		];
 
-		const result = await safeSpawnAsync("npx", args, {
+		const result = await safeSpawnAsync(sgCmd, args, {
 			timeout: 30000,
 		});
 

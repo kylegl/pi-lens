@@ -58,7 +58,6 @@
 	"dependencies": {
 		"@sinclair/typebox": "^0.34.0",
 		"cross-spawn": "^7.0.6",
-		"effect": "^3.21.0",
 		"vscode-jsonrpc": "^8.2.1"
 	},
 	"optionalDependencies": {

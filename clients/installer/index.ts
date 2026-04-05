@@ -281,6 +281,16 @@ async function verifyToolBinary(binPath: string): Promise<boolean> {
 /**
  * Install an npm package tool
  */
+/**
+ * Packages that require postinstall scripts to download native binaries.
+ * All others get --ignore-scripts to prevent arbitrary code execution during install.
+ */
+const NEEDS_POSTINSTALL = new Set([
+	"@biomejs/biome",
+	"@ast-grep/napi",
+	"esbuild",
+]);
+
 async function installNpmTool(
 	packageName: string,
 	binaryName: string,
@@ -311,7 +321,15 @@ async function installNpmTool(
 			: isWindows
 				? "npm.cmd"
 				: "npm";
-		const proc = spawn(pm, ["install", packageName], {
+		// Use --ignore-scripts unless the package explicitly needs postinstall
+		// (e.g. biome downloads a platform-specific native binary via postinstall).
+		const needsScripts = NEEDS_POSTINSTALL.has(
+			packageName.split("@")[0] ?? packageName,
+		);
+		const installArgs = needsScripts
+			? ["install", packageName]
+			: ["install", "--ignore-scripts", packageName];
+		const proc = spawn(pm, installArgs, {
 			cwd: TOOLS_DIR,
 			stdio: ["ignore", "pipe", "pipe"],
 			shell: isWindows, // Required for .cmd files on Windows
