@@ -37,10 +37,10 @@ const biomeRunner: RunnerDefinition = {
 			}
 		}
 
-		// IMPORTANT: Never use --write in dispatch runner to prevent infinite loops.
-		// Writing to the file would trigger another tool_result event, which would
-		// call dispatchLint again, creating a feedback loop.
-		// Auto-format handles formatting on write; this runner only checks.
+		// No --write here: dispatch runners report issues for agent understanding,
+		// not silent correction. Auto-format (biome --write) already runs in the
+		// format phase before dispatch, handling all safe style transforms.
+		// Silently rewriting here would leave the agent's context window stale.
 		const args = useNpx
 			? ["biome", "check", ctx.filePath]
 			: ["check", ctx.filePath];

@@ -35,10 +35,10 @@ const ruffRunner: RunnerDefinition = {
 			}
 		}
 
-		// IMPORTANT: Never use --fix in dispatch runner to prevent infinite loops.
-		// Writing to the file would trigger another tool_result event, which would
-		// call dispatchLint again, creating a feedback loop.
-		// Fixes should be applied through explicit commands or user edits.
+		// No --fix here: dispatch runners report issues for agent understanding,
+		// not silent correction. Auto-fix (ruff --fix) already runs in the
+		// format phase before dispatch, handling all safe style transforms.
+		// Silently rewriting here would leave the agent's context window stale.
 		const args = ["check", ctx.filePath];
 
 		const result = await safeSpawnAsync(ruff.getCommand()!, args, {
