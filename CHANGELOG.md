@@ -2,7 +2,7 @@
 
 All notable changes to pi-lens will be documented in this file.
 
-## [3.8.1] - 2026-04-05
+## [3.8.1] - 2026-04-06
 
 ### Fixed
 - **`console-statement` hijacking `no-console-in-tests`** — The keyword match for
@@ -13,6 +13,11 @@ All notable changes to pi-lens will be documented in this file.
   patterns instead of a single union pattern `[...]`. Replaced with valid union syntax
   and added `post_filter: check_secret_pattern` so variable names are actually filtered
   against credential patterns. Reduced false positives from 58 → 0 on the codebase.
+- **`postinstall` failing on Windows** — `scripts/` was accidentally in `.gitignore` so
+  `scripts/download-grammars.ts` was never committed. Added the script, which downloads
+  the 10 tree-sitter WASM grammars from unpkg at install time. Also fixed `|| true`
+  which is not valid on Windows cmd.exe — replaced with native Node TS execution via
+  `node --experimental-strip-types` (Node 22+, no extra deps).
 
 ## [3.8.0] - 2026-04-05
 
