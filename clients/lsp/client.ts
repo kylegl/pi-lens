@@ -633,7 +633,13 @@ async function safeSendRequest<T>(
 	}
 }
 
-// Helper to detect stream destruction errors
+// Helper to detect stream destruction / connection disposal errors.
+// vscode-jsonrpc throws these when the LSP server process exits while
+// requests are still in flight:
+//   "Connection is disposed."
+//   "Pending response rejected since connection got disposed"
+// Neither phrase contains "stream", "destroyed", or "closed", which is
+// why we must also match "disposed" and "cancelled" here.
 function isStreamError(err: unknown): boolean {
 	if (!(err instanceof Error)) return false;
 	const msg = err.message.toLowerCase();
@@ -641,6 +647,8 @@ function isStreamError(err: unknown): boolean {
 		msg.includes("stream") ||
 		msg.includes("destroyed") ||
 		msg.includes("closed") ||
+		msg.includes("disposed") ||
+		msg.includes("cancelled") ||
 		(err as { code?: string }).code === "ERR_STREAM_DESTROYED" ||
 		(err as { code?: string }).code === "EPIPE"
 	);
@@ -669,6 +677,10 @@ async function withTimeout<T>(
 	promise: Promise<T>,
 	timeoutMs: number,
 ): Promise<T> {
+	// Suppress unhandled rejection if `promise` rejects AFTER the timeout
+	// wins the race — Promise.race settles on the first result but the
+	// losing promises still run, and any later rejection would be uncaught.
+	promise.catch(() => {});
 	return Promise.race([
 		promise,
 		new Promise<T>((_, reject) =>

@@ -717,7 +717,13 @@ export default function (pi: ExtensionAPI) {
 			} catch {
 				/* ignore */
 			}
-			if (fileContent) await lspService.openFile(filePath, fileContent);
+			if (fileContent) {
+				try {
+					await lspService.openFile(filePath, fileContent);
+				} catch {
+					/* LSP server may not be ready yet — proceed anyway */
+				}
+			}
 
 			// Convert 1-based editor coords to 0-based LSP coords
 			const lspLine = (line ?? 1) - 1;
