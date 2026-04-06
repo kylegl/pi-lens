@@ -82,7 +82,7 @@ Some runners are language/config-gated and may skip when not applicable.
 
 ## Dependencies
 
-Core defaults are auto-installed below. Other language/toolchain-specific tools run when present and configured.
+Auto-installed defaults:
 
 | Tool | Purpose | Auto-installed |
 |---|---|---|
@@ -95,10 +95,8 @@ Core defaults are auto-installed below. Other language/toolchain-specific tools 
 | `jscpd` | Duplicate code detection | Yes |
 | `@ast-grep/cli` (`sg`) | AST search/replace and scans | Yes |
 | `knip` | Dead code analysis | Yes |
-| `golangci-lint` | Go linting | No (manual/config-gated) |
-| `rust-clippy` | Rust linting | No (manual/toolchain) |
-| `rubocop` | Ruby linting | No (manual/bundler) |
-| `shellcheck` | Shell linting | No (manual) |
+
+`--lens-lsp` supports multi-language LSP workflows (including up to 31 language servers), with non-core servers depending on local installation and project configuration.
 
 ## Notes
 
