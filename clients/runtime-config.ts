@@ -17,4 +17,8 @@ export const RUNTIME_CONFIG = {
 		alwaysShowFirstN: 2,
 		showEveryNth: 5,
 	},
+	turnEnd: {
+		maxLines: 24,
+		maxChars: 1600,
+	},
 } as const;

@@ -1,7 +1,6 @@
 import * as path from "node:path";
+import { RUNTIME_CONFIG } from "./runtime-config.js";
 import { resolveRunnerPath, toRunnerDisplayPath } from "./dispatch/runner-context.js";
-import { getDiagnosticTracker } from "./diagnostic-tracker.js";
-import { formatSessionSummary } from "./session-summary.js";
 import type { CacheManager } from "./cache-manager.js";
 import type { DependencyChecker } from "./dependency-checker.js";
 import type { JscpdClient } from "./jscpd-client.js";
@@ -17,6 +16,22 @@ interface TurnEndDeps {
 	depChecker: DependencyChecker;
 	resetLSPService: () => void;
 	resetFormatService: () => void;
+}
+
+function capTurnEndMessage(content: string): string {
+	const maxLines = RUNTIME_CONFIG.turnEnd.maxLines;
+	const maxChars = RUNTIME_CONFIG.turnEnd.maxChars;
+
+	let out = content;
+	const lines = out.split("\n");
+	if (lines.length > maxLines) {
+		out = `${lines.slice(0, maxLines).join("\n")}\n... (truncated)`;
+	}
+	if (out.length > maxChars) {
+		out = `${out.slice(0, maxChars)}\n... (truncated)`;
+	}
+
+	return out;
 }
 
 export async function handleTurnEnd(deps: TurnEndDeps): Promise<void> {
@@ -56,10 +71,10 @@ export async function handleTurnEnd(deps: TurnEndDeps): Promise<void> {
 		return;
 	}
 
-	const parts: string[] = [];
+	const blockerParts: string[] = [];
 
 	if (runtime.lastCascadeOutput) {
-		parts.push(runtime.consumeLastCascadeOutput());
+		blockerParts.push(runtime.consumeLastCascadeOutput());
 	}
 
 	if (jscpdClient.isAvailable()) {
@@ -87,7 +102,7 @@ export async function handleTurnEnd(deps: TurnEndDeps): Promise<void> {
 					const displayB = toRunnerDisplayPath(cwd, clone.fileB);
 					report += `  ${displayA}:${clone.startA} ↔ ${displayB}:${clone.startB} (${clone.lines} lines)\n`;
 				}
-				parts.push(report);
+				blockerParts.push(report);
 			}
 			cacheManager.writeCache("jscpd", result, cwd);
 		}
@@ -108,8 +123,8 @@ export async function handleTurnEnd(deps: TurnEndDeps): Promise<void> {
 						.filter((p: string) => !absPath.endsWith(path.basename(p)));
 					const uniqueDeps = [...new Set(circularDeps)];
 					if (uniqueDeps.length > 0) {
-						parts.push(
-							`🟡 Circular dependency in ${file}: imports ${uniqueDeps.join(", ")}`,
+						dbg(
+							`turn_end: circular dependency note for ${file} (suppressed in blockers-only mode)`,
 						);
 					}
 				}
@@ -129,23 +144,17 @@ export async function handleTurnEnd(deps: TurnEndDeps): Promise<void> {
 		);
 	}
 
-	const tracker = getDiagnosticTracker();
-	const stats = tracker.getStats();
-	if (stats.totalShown > 0) {
-		const summary = formatSessionSummary(stats);
-		if (summary) {
-			parts.push(summary);
-			dbg(
-				`turn_end: diagnostic summary added (${stats.totalShown} shown, ${stats.totalAutoFixed} auto-fixed, ${stats.totalAgentFixed} agent-fixed)`,
-			);
-		}
-	}
+	// Session summaries are intentionally suppressed at turn_end to avoid
+	// distracting the agent with non-blocking telemetry.
 
 	cacheManager.incrementTurnCycle(cwd);
 
-	if (parts.length > 0) {
-		dbg(`turn_end: ${parts.length} issue(s) found, persisting for next context`);
-		cacheManager.writeCache("turn-end-findings", { content: parts.join("\n\n") }, cwd);
+	if (blockerParts.length > 0) {
+		dbg(
+			`turn_end: ${blockerParts.length} blocker section(s) found, persisting for next context`,
+		);
+		const content = capTurnEndMessage(blockerParts.join("\n\n"));
+		cacheManager.writeCache("turn-end-findings", { content }, cwd);
 	} else {
 		cacheManager.clearTurnState(cwd);
 	}
