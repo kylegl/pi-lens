@@ -11,6 +11,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { safeSpawnAsync } from "../../safe-spawn.js";
+import { tryLazyInstall } from "./utils/lazy-installer.js";
 import type {
 	Diagnostic,
 	DispatchContext,
@@ -105,7 +106,14 @@ const rubocopRunner: RunnerDefinition = {
 			cwd,
 		});
 		if (versionCheck.error || versionCheck.status !== 0) {
-			return { status: "skipped", diagnostics: [], semantic: "none" };
+			await tryLazyInstall("rubocop", cwd);
+			const retry = await safeSpawnAsync(cmd, [...args, "--version"], {
+				timeout: 10000,
+				cwd,
+			});
+			if (retry.error || retry.status !== 0) {
+				return { status: "skipped", diagnostics: [], semantic: "none" };
+			}
 		}
 
 		// Lint only — no auto-correct (formatter handles that)

@@ -6,8 +6,9 @@
 
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { safeSpawn } from "../../safe-spawn.js";
+import { safeSpawnAsync } from "../../safe-spawn.js";
 import { stripAnsi } from "../../sanitize.js";
+import { tryLazyInstall } from "./utils/lazy-installer.js";
 import type {
 	Diagnostic,
 	DispatchContext,
@@ -23,12 +24,27 @@ const rustClippyRunner: RunnerDefinition = {
 
 	async run(ctx: DispatchContext): Promise<RunnerResult> {
 		// Check if cargo is available
-		const check = safeSpawn("cargo", ["--version"], {
+		const check = await safeSpawnAsync("cargo", ["--version"], {
 			timeout: 5000,
 		});
 
 		if (check.error || check.status !== 0) {
 			return { status: "skipped", diagnostics: [], semantic: "none" };
+		}
+
+		const clippyCheck = await safeSpawnAsync("cargo", ["clippy", "--version"], {
+			timeout: 8000,
+			cwd: ctx.cwd,
+		});
+		if (clippyCheck.error || clippyCheck.status !== 0) {
+			await tryLazyInstall("rust-clippy", ctx.cwd);
+			const retry = await safeSpawnAsync("cargo", ["clippy", "--version"], {
+				timeout: 8000,
+				cwd: ctx.cwd,
+			});
+			if (retry.error || retry.status !== 0) {
+				return { status: "skipped", diagnostics: [], semantic: "none" };
+			}
 		}
 
 		// Find the package root (where Cargo.toml is)
@@ -38,7 +54,7 @@ const rustClippyRunner: RunnerDefinition = {
 		}
 
 		// Run cargo clippy on the package
-		const result = safeSpawn(
+		const result = await safeSpawnAsync(
 			"cargo",
 			["clippy", "--message-format=json", "-q"],
 			{

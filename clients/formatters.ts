@@ -13,6 +13,31 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { safeSpawn } from "./safe-spawn.js";
 
+const _lazyInstallAttempts = new Set<string>();
+
+async function tryLazyInstallFormatterTool(
+	tool: "rubocop" | "rustfmt",
+	cwd: string,
+): Promise<boolean> {
+	const attemptKey = `${tool}:${cwd}`;
+	if (_lazyInstallAttempts.has(attemptKey)) return false;
+	_lazyInstallAttempts.add(attemptKey);
+
+	if (tool === "rubocop") {
+		const res = safeSpawn("gem", ["install", "rubocop", "--no-document"], {
+			timeout: 180000,
+			cwd,
+		});
+		return !res.error && res.status === 0;
+	}
+
+	const res = safeSpawn("rustup", ["component", "add", "rustfmt"], {
+		timeout: 180000,
+		cwd,
+	});
+	return !res.error && res.status === 0;
+}
+
 // --- Types ---
 
 export interface FormatterInfo {
@@ -379,7 +404,13 @@ export const rustfmtFormatter: FormatterInfo = {
 	name: "rustfmt",
 	command: ["rustfmt", "$FILE"],
 	extensions: [".rs"],
-	async detect(_cwd: string) {
+	async detect(cwd: string) {
+		if ((await which("rustfmt")) !== null) return true;
+		// If we're in a Rust project, attempt one lazy install of rustfmt component.
+		const rustProject = (await findUp(["Cargo.toml"], cwd)).length > 0;
+		if (!rustProject) return false;
+		if ((await which("rustup")) === null) return false;
+		await tryLazyInstallFormatterTool("rustfmt", cwd);
 		return (await which("rustfmt")) !== null;
 	},
 };
@@ -477,12 +508,20 @@ export const rubocopFormatter: FormatterInfo = {
 		// Only run if project has explicit RuboCop config
 		const configs = [".rubocop.yml", ".rubocop.yaml"];
 		const found = await findUp(configs, cwd);
-		if (found.length > 0) return (await which("rubocop")) !== null;
+		if (found.length > 0) {
+			if ((await which("rubocop")) !== null) return true;
+			await tryLazyInstallFormatterTool("rubocop", cwd);
+			return (await which("rubocop")) !== null;
+		}
 		// Or rubocop in Gemfile
 		const gemfile = path.join(cwd, "Gemfile");
 		if (await fileExists(gemfile)) {
 			const content = await fs.readFile(gemfile, "utf-8");
-			if (content.includes("rubocop")) return (await which("rubocop")) !== null;
+			if (content.includes("rubocop")) {
+				if ((await which("rubocop")) !== null) return true;
+				await tryLazyInstallFormatterTool("rubocop", cwd);
+				return (await which("rubocop")) !== null;
+			}
 		}
 		return false;
 	},

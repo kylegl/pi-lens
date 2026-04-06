@@ -14,6 +14,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { safeSpawnAsync } from "../../safe-spawn.js";
 import { stripAnsi } from "../../sanitize.js";
+import { tryLazyInstall } from "./utils/lazy-installer.js";
 import type {
 	Diagnostic,
 	DispatchContext,
@@ -98,7 +99,14 @@ const golangciRunner: RunnerDefinition = {
 			cwd,
 		});
 		if (versionCheck.error || versionCheck.status !== 0) {
-			return { status: "skipped", diagnostics: [], semantic: "none" };
+			await tryLazyInstall("golangci-lint", cwd);
+			const retry = await safeSpawnAsync("golangci-lint", ["version"], {
+				timeout: 10000,
+				cwd,
+			});
+			if (retry.error || retry.status !== 0) {
+				return { status: "skipped", diagnostics: [], semantic: "none" };
+			}
 		}
 
 		// Run on the specific file. golangci-lint accepts file paths directly.
