@@ -26,14 +26,13 @@ const GRAMMARS = [
 	"tree-sitter-ruby.wasm",
 ];
 
-function findGrammarsDir(): string {
+function findGrammarsDir() {
 	const scriptDir = dirname(fileURLToPath(import.meta.url));
 	const pkgRoot = dirname(scriptDir);
-	// Prefer local node_modules next to this package
 	return join(pkgRoot, "node_modules", "web-tree-sitter", "grammars");
 }
 
-async function downloadGrammar(destDir: string, filename: string): Promise<void> {
+async function downloadGrammar(destDir, filename) {
 	const dest = join(destDir, filename);
 	if (existsSync(dest)) {
 		console.log(`  skip  ${filename} (already exists)`);
@@ -47,32 +46,27 @@ async function downloadGrammar(destDir: string, filename: string): Promise<void>
 	console.log(`  ok    ${filename}`);
 }
 
-async function main(): Promise<void> {
+async function main() {
 	const grammarsDir = findGrammarsDir();
-
 	if (!existsSync(grammarsDir)) {
 		mkdirSync(grammarsDir, { recursive: true });
 	}
-
-	console.log(`Downloading tree-sitter grammars → ${grammarsDir}`);
-
+	console.log(`Downloading tree-sitter grammars to ${grammarsDir}`);
 	const results = await Promise.allSettled(
 		GRAMMARS.map((g) => downloadGrammar(grammarsDir, g)),
 	);
-
 	const failed = results.filter((r) => r.status === "rejected");
 	if (failed.length > 0) {
 		for (const f of failed) {
-			console.warn("  warn ", (f as PromiseRejectedResult).reason?.message);
+			console.warn("  warn ", f.reason?.message);
 		}
-		console.warn(`${failed.length} grammar(s) failed — tree-sitter analysis may be unavailable.`);
+		console.warn(`${failed.length} grammar(s) failed - tree-sitter analysis may be unavailable.`);
 	} else {
 		console.log("All grammars downloaded successfully.");
 	}
 }
 
 main().catch((err) => {
-	// Never fail the install — tree-sitter is optional
 	console.warn("Warning: grammar download failed:", err.message);
 	process.exit(0);
 });

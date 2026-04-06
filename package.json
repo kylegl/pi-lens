@@ -20,8 +20,8 @@
 		"rust:test": "cargo test --manifest-path rust/Cargo.toml --all-targets --all-features",
 		"rust:build": "cargo build --manifest-path rust/Cargo.toml --release",
 		"rust:build:debug": "cargo build --manifest-path rust/Cargo.toml",
-		"download-grammars": "node --experimental-strip-types scripts/download-grammars.ts",
-		"postinstall": "node --experimental-strip-types scripts/download-grammars.ts"
+		"download-grammars": "node scripts/download-grammars.js",
+		"postinstall": "node scripts/download-grammars.js"
 	},
 	"keywords": [
 		"pi",
@@ -46,7 +46,7 @@
 		"commands/**/*.ts",
 		"rules/",
 		"skills/",
-		"scripts/download-grammars.ts",
+		"scripts/download-grammars.js",
 		"rust/src/",
 		"rust/Cargo.toml",
 		"default-architect.yaml",

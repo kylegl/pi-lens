@@ -17,6 +17,7 @@ out/
 *.js
 *.js.map
 *.d.ts
+!scripts/download-grammars.js
 
 # Internal planning docs
 featureideas.md
