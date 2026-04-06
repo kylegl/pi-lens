@@ -2,6 +2,13 @@
 
 All notable changes to pi-lens will be documented in this file.
 
+## [3.8.8] - 2026-04-07
+
+### Changed
+- **README massively simplified** — Reduced the README to core purpose, install/run, key commands, and concise usage notes.
+- **Docs trimmed** — Removed deep internal documentation files from `docs/` to keep project docs minimal and focused.
+- **Positioning text clarified** — Updated wording to describe pi-lens as real-time inline feedback for AI agents.
+
 ## [3.8.7] - 2026-04-06
 
 ### Fixed
