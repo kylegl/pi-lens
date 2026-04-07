@@ -14,7 +14,8 @@
  * - To: await safeSpawnAsync(cmd, args, opts)
  */
 
-import { type SpawnOptions, spawn, spawnSync } from "node:child_process";
+import type { SpawnOptions } from "node:child_process";
+import spawn from "cross-spawn";
 
 export interface SpawnResult {
 	stdout: string;
@@ -73,12 +74,11 @@ export async function safeSpawnAsync(
 
 		// Spawn the process (non-blocking)
 		// On Windows, use shell mode for .cmd files (like pyright, biome)
-		const isWindows = process.platform === "win32";
 		const child = spawn(command, args, {
 			cwd: options?.cwd,
 			env: { ...process.env, ...options?.env },
 			windowsHide: true,
-			shell: isWindows,
+			shell: false,
 		});
 
 		// Handle abort signal
@@ -218,26 +218,6 @@ export async function findCommandAsync(
 // ============================================================================
 
 /**
- * Escape an argument for Windows shell execution.
- * Handles spaces, quotes, $variables, and special characters.
- */
-function escapeWindowsArg(arg: string): string {
-	if (arg.includes("$")) {
-		return `'${arg.replace(/'/g, "'\\''")}'`;
-	}
-	if (!/[\s"]/.test(arg)) return arg;
-	return `"${arg.replace(/"/g, '""')}"`;
-}
-
-/**
- * Construct a command string for Windows shell execution.
- */
-function buildWindowsCommand(command: string, args: string[]): string {
-	const escapedArgs = args.map(escapeWindowsArg).join(" ");
-	return `${command} ${escapedArgs}`;
-}
-
-/**
  * ⚠️ DEPRECATED: Use safeSpawnAsync instead.
  *
  * This blocks the entire Node.js event loop until the process exits.
@@ -250,24 +230,7 @@ export function safeSpawn(
 	args: string[],
 	options?: SafeSpawnOptions,
 ): SpawnResult {
-	if (process.platform === "win32") {
-		const fullCommand = buildWindowsCommand(command, args);
-		const result = spawnSync(fullCommand, {
-			...(options as SpawnOptions),
-			encoding: "utf-8",
-			shell: true,
-			windowsHide: true,
-		});
-
-		return {
-			stdout: result.stdout?.toString() || "",
-			stderr: result.stderr?.toString() || "",
-			status: result.status,
-			error: result.error,
-		};
-	}
-
-	const result = spawnSync(command, args, {
+	const result = spawn.sync(command, args, {
 		...(options as SpawnOptions),
 		encoding: "utf-8",
 		shell: false,

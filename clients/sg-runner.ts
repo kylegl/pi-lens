@@ -5,27 +5,15 @@
  * Handles: spawn, spawnSync, temp dir management, JSON parsing.
  */
 
-import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import spawn from "cross-spawn";
 import {
 	getSgCommand,
 	isSgAvailable,
 } from "./dispatch/runners/utils/runner-helpers.js";
 import { safeSpawn } from "./safe-spawn.js";
-
-/**
- * Escape an argument for Windows cmd.exe shell execution.
- * Handles spaces, quotes, and special characters.
- */
-function escapeWindowsArg(arg: string): string {
-	// If no special characters, return as-is
-	if (!/[\s"]/.test(arg)) return arg;
-
-	// Escape quotes by doubling them
-	return `"${arg.replace(/"/g, '""')}"`;
-}
 
 export interface SgMatch {
 	file: string;
@@ -110,51 +98,18 @@ export class SgRunner {
 	 */
 	async exec(args: string[]): Promise<SgResult> {
 		return new Promise((resolve) => {
-			// On Windows with Git Bash/MSYS2, we need to use bash to properly
-			// handle $variables in patterns (prevent shell expansion)
 			const isWindows = process.platform === "win32";
-			const hasBash = process.env.MSYSTEM || process.env.GIT_SHELL;
-
-			let proc;
-			if (isWindows && hasBash) {
-				// Use bash -c with properly escaped command
-				// In bash, use single quotes around arguments containing $ to prevent expansion
-				const escapedArgs = args.map((arg) => {
-					// For bash, wrap $-containing args in single quotes
-					if (arg.includes("$")) {
-						return `'${arg.replace(/'/g, "'\\''")}'`;
-					}
-					// For other args with spaces/special chars, use double quotes
-					if (/[\s"]/.test(arg)) {
-						return `"${arg.replace(/"/g, '\\"')}"`;
-					}
-					return arg;
-				});
-				const bashCommand = `${this.getSgCommand()} ${escapedArgs.join(" ")}`;
-				proc = spawn("bash", ["-c", bashCommand], {
-					stdio: ["ignore", "pipe", "pipe"],
-					windowsHide: true,
-				});
-			} else if (isWindows) {
-				// Fallback: use cmd.exe with standard escaping
-				const fullCommand = `${this.getSgCommand()} ${args.map(escapeWindowsArg).join(" ")}`;
-				proc = spawn(fullCommand, {
-					stdio: ["ignore", "pipe", "pipe"],
-					shell: true,
-					windowsHide: true,
-				});
-			} else {
-				// Unix: normal spawn without shell
-				proc = spawn(this.getSgCommand(), args, {
-					stdio: ["ignore", "pipe", "pipe"],
-				});
-			}
+			const proc = spawn(this.getSgCommand(), args, {
+				stdio: ["ignore", "pipe", "pipe"],
+				windowsHide: isWindows,
+				shell: false,
+			});
 
 			let stdout = "";
 			let stderr = "";
 
-			proc.stdout.on("data", (data: Buffer) => (stdout += data.toString()));
-			proc.stderr.on("data", (data: Buffer) => (stderr += data.toString()));
+			proc.stdout?.on("data", (data: Buffer) => (stdout += data.toString()));
+			proc.stderr?.on("data", (data: Buffer) => (stderr += data.toString()));
 
 			proc.on("error", (err: Error) => {
 				if (err.message.includes("ENOENT")) {
