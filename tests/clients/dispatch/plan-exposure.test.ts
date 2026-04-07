@@ -25,4 +25,14 @@ describe("dispatch plan exposure", () => {
 		expect(pythonIds).toContain("ruff-lint");
 		expect(pythonIds).toContain("python-slop");
 	});
+
+	it("ensures python and ruby write-path plans include lsp+lint coverage", () => {
+		const pythonIds = flattenRunnerIds(TOOL_PLANS.python);
+		const rubyIds = flattenRunnerIds(TOOL_PLANS.ruby);
+
+		expect(pythonIds).toContain("lsp");
+		expect(pythonIds).toContain("ruff-lint");
+		expect(rubyIds).toContain("lsp");
+		expect(rubyIds).toContain("rubocop");
+	});
 });

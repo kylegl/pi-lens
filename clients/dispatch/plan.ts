@@ -64,6 +64,8 @@ export const TOOL_PLANS: Record<string, ToolPlan> = {
 			// Type checking with fallback chain:
 			// 1) unified LSP when available, 2) pyright CLI fallback.
 			{ mode: "fallback", runnerIds: ["lsp", "pyright"], filterKinds: ["python"] },
+			// Ruff lint checks (formatting remains in formatter pipeline)
+			{ mode: "fallback", runnerIds: ["ruff-lint"], filterKinds: ["python"] },
 			{ mode: "fallback", runnerIds: ["architect"], filterKinds: ["python"] },
 			// Note: ruff handled by direct auto-fix calls in index.ts (not in dispatch)
 		],
@@ -107,6 +109,8 @@ export const TOOL_PLANS: Record<string, ToolPlan> = {
 	ruby: {
 		name: "Ruby Linting",
 		groups: [
+			// LSP type checking (Ruby LSP/Solargraph when available)
+			{ mode: "all", runnerIds: ["lsp"], filterKinds: ["ruby"] },
 			{ mode: "fallback", runnerIds: ["rubocop"], filterKinds: ["ruby"] },
 			// Structural analysis
 			{ mode: "all", runnerIds: ["tree-sitter"], filterKinds: ["ruby"] },
