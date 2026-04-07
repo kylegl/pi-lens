@@ -132,7 +132,12 @@ const lspRunner: RunnerDefinition = {
 				column: d.range.start.character + 1,
 				severity:
 					d.severity === 1 ? "error" : d.severity === 2 ? "warning" : "info",
-				semantic: d.severity === 1 ? "blocking" : "warning",
+				semantic:
+					d.severity === 1
+						? "blocking"
+						: d.severity === 2
+							? "warning"
+							: "none",
 				tool: "lsp",
 				code: String(d.code ?? ""),
 			}));
