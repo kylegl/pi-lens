@@ -37,7 +37,8 @@ const USE_RUST = true;
 
 const CONFIG = {
 	SIMILARITY_THRESHOLD: 0.9, // 90% minimum similarity — below this false positives dominate
-	MIN_TRANSITIONS: 20, // Skip functions with <20 AST transitions
+	MIN_TRANSITIONS: 30, // Skip small functions with weak structural signal
+	MIN_FUNCTION_LINES: 8, // Ignore tiny helpers/wrappers
 	MAX_SUGGESTIONS: 3, // Max 3 suggestions per file
 	MAX_PER_TARGET_NAME: 1, // Avoid one-to-many spam for the same target utility
 };
@@ -158,7 +159,10 @@ const similarityRunner: RunnerDefinition = {
 
 		for (const func of newFunctions) {
 			// Guardrail: Skip tiny functions
-			if (func.transitionCount < CONFIG.MIN_TRANSITIONS) {
+			if (
+				func.transitionCount < CONFIG.MIN_TRANSITIONS ||
+				func.lineCount < CONFIG.MIN_FUNCTION_LINES
+			) {
 				continue;
 			}
 
@@ -172,6 +176,10 @@ const similarityRunner: RunnerDefinition = {
 
 			// Create diagnostic for each match
 			for (const match of matches) {
+				if (match.targetTransitionCount < CONFIG.MIN_TRANSITIONS) {
+					continue;
+				}
+
 				if (!hasMeaningfulNameOverlap(func.name, match.targetName)) {
 					continue;
 				}
@@ -237,6 +245,7 @@ export interface ExtractedFunction {
 	name: string;
 	line: number;
 	column: number;
+	lineCount: number;
 	matrix: number[][];
 	transitionCount: number;
 	signature: string;
@@ -251,17 +260,19 @@ export function extractFunctions(
 	function visit(node: ts.Node) {
 		// Function declarations
 		if (ts.isFunctionDeclaration(node) && node.name) {
-			const { line, character } = sourceFile.getLineAndCharacterOfPosition(
+			const startPos = sourceFile.getLineAndCharacterOfPosition(
 				node.getStart(sourceFile),
 			);
+			const endPos = sourceFile.getLineAndCharacterOfPosition(node.getEnd());
 			const funcCode = getNodeText(node, sourceFile);
 			const matrix = buildStateMatrix(funcCode);
 			const transitionCount = countTransitions(matrix);
 
 			functions.push({
 				name: node.name.text,
-				line: line + 1, // 1-indexed
-				column: character + 1, // 1-indexed
+				line: startPos.line + 1, // 1-indexed
+				column: startPos.character + 1, // 1-indexed
+				lineCount: Math.max(1, endPos.line - startPos.line + 1),
 				matrix,
 				transitionCount,
 				signature: getSignature(node),
@@ -295,17 +306,19 @@ function extractArrowFunctions(
 			continue;
 		}
 
-		const { line, character } = sourceFile.getLineAndCharacterOfPosition(
+		const startPos = sourceFile.getLineAndCharacterOfPosition(
 			node.getStart(sourceFile),
 		);
+		const endPos = sourceFile.getLineAndCharacterOfPosition(func.getEnd());
 		const funcCode = getNodeText(func, sourceFile);
 		const matrix = buildStateMatrix(funcCode);
 		const transitionCount = countTransitions(matrix);
 
 		functions.push({
 			name: decl.name.text,
-			line: line + 1,
-			column: character + 1,
+			line: startPos.line + 1,
+			column: startPos.character + 1,
+			lineCount: Math.max(1, endPos.line - startPos.line + 1),
 			matrix,
 			transitionCount,
 			signature: getArrowSignature(func),
