@@ -324,7 +324,7 @@ export async function runPipeline(
 	phase.start("lsp_sync");
 	let lspSyncCompleted = false;
 	let lspPhaseEnded = false;
-	if (getFlag("lens-lsp") && fileContent) {
+	if (getFlag("lens-lsp") && !getFlag("no-lsp") && fileContent) {
 		const deferLspSync =
 			!getFlag("no-autofix") &&
 			(ruffClient.isPythonFile(filePath) ||
@@ -433,7 +433,12 @@ export async function runPipeline(
 
 	// Re-sync LSP after format/autofix changes so dispatch uses current code,
 	// not diagnostics from the pre-fix snapshot.
-	if (getFlag("lens-lsp") && fileContent && (needsContentRefresh || !lspSyncCompleted)) {
+	if (
+		getFlag("lens-lsp") &&
+		!getFlag("no-lsp") &&
+		fileContent &&
+		(needsContentRefresh || !lspSyncCompleted)
+	) {
 		const limitCheck = exceedsLspSyncLimits(filePath, fileContent);
 		if (!limitCheck.tooLarge) {
 			try {

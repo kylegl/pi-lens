@@ -48,7 +48,7 @@ const lspRunner: RunnerDefinition = {
 	async run(ctx: DispatchContext): Promise<RunnerResult> {
 		const diagnosticPath = resolveRunnerPath(ctx.cwd, ctx.filePath);
 		// Only run if --lens-lsp flag is enabled
-		if (!ctx.pi.getFlag("lens-lsp")) {
+		if (!ctx.pi.getFlag("lens-lsp") || !!ctx.pi.getFlag("no-lsp")) {
 			return { status: "skipped", diagnostics: [], semantic: "none" };
 		}
 

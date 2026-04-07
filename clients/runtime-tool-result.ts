@@ -202,7 +202,7 @@ export async function handleToolResult(
 	} catch (pipelineErr) {
 		dbg(`runPipeline crashed: ${pipelineErr}`);
 		dbg(`runPipeline crash stack: ${(pipelineErr as Error).stack}`);
-		if (getFlag("lens-lsp")) {
+		if (getFlag("lens-lsp") && !getFlag("no-lsp")) {
 			resetLSPService();
 		}
 
@@ -224,7 +224,11 @@ export async function handleToolResult(
 
 	if (result.cascadeOutput) {
 		runtime.lastCascadeOutput = result.cascadeOutput;
-	} else if (result.cascadeOutput === undefined && getFlag("lens-lsp")) {
+	} else if (
+		result.cascadeOutput === undefined &&
+		getFlag("lens-lsp") &&
+		!getFlag("no-lsp")
+	) {
 		runtime.lastCascadeOutput = "";
 	}
 

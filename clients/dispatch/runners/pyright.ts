@@ -29,7 +29,7 @@ const pyrightRunner: RunnerDefinition = {
 	async run(ctx: DispatchContext): Promise<RunnerResult> {
 		// When --lens-lsp is active, prefer the unified lsp runner.
 		// But if LSP is unavailable for this file, keep pyright CLI fallback.
-		if (ctx.pi.getFlag("lens-lsp")) {
+		if (ctx.pi.getFlag("lens-lsp") && !ctx.pi.getFlag("no-lsp")) {
 			const lspService = getLSPService();
 			const hasLSP = await lspService.hasLSP(ctx.filePath);
 			if (hasLSP) {

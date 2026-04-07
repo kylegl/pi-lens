@@ -107,12 +107,12 @@ export function createLspNavigationTool(
 			_onUpdate: unknown,
 			ctx: { cwd?: string },
 		) {
-			if (!getFlag("lens-lsp")) {
+			if (!getFlag("lens-lsp") || getFlag("no-lsp")) {
 				return {
 					content: [
 						{
 							type: "text" as const,
-							text: "lsp_navigation requires the --lens-lsp flag. Start pi with --lens-lsp to enable.",
+							text: "lsp_navigation requires LSP to be enabled. Use --lens-lsp (default) and ensure --no-lsp is not set.",
 						},
 					],
 					isError: true,

@@ -2,6 +2,18 @@
 
 All notable changes to pi-lens will be documented in this file.
 
+## [3.8.10] - 2026-04-07
+
+### Changed
+- **LSP default-on** — `--lens-lsp` is now enabled by default to provide unified LSP diagnostics across supported file kinds.
+- **Capability-driven LSP dispatch** — dispatch now prepends LSP dynamically by file kind/flag state, while still using runtime `hasLSP(file)` checks for safe activation.
+- **Fallback safety switch clarified** — `--no-lsp` is documented and wired as the explicit opt-out path to language-specific fallbacks.
+
+### Fixed
+- **`--no-lsp` consistency** — LSP sync/reset/navigation and runner gating now respect `--no-lsp` consistently, so fallback behavior is predictable.
+- **LSP/lint overlap noise** — non-blocking lint diagnostics overlapping with LSP on the same file/line are suppressed to keep inline output focused.
+- **turn_end actionability** — blocker summaries for jscpd/knip now include direct file hints to reduce path-guessing loops.
+
 ## [3.8.9] - 2026-04-07
 
 ### Changed

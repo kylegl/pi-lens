@@ -32,7 +32,7 @@ const tsLspRunner: RunnerDefinition = {
 
 		// When --lens-lsp is active, prefer the unified lsp runner.
 		// But if LSP service isn't actually available for this file, keep ts fallback.
-		if (ctx.pi.getFlag("lens-lsp")) {
+		if (ctx.pi.getFlag("lens-lsp") && !ctx.pi.getFlag("no-lsp")) {
 			const lspService = getLSPService();
 			const hasLSP = await lspService.hasLSP(ctx.filePath);
 			if (hasLSP) {

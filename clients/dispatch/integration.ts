@@ -46,7 +46,7 @@ function withPrimaryLspGroup(
 	groups: RunnerGroup[],
 	pi: PiAgentAPI,
 ): RunnerGroup[] {
-	if (!pi.getFlag("lens-lsp")) return groups;
+	if (!pi.getFlag("lens-lsp") || !!pi.getFlag("no-lsp")) return groups;
 
 	const alreadyHasLsp = groups.some((g) => g.runnerIds.includes("lsp"));
 	if (alreadyHasLsp) return groups;

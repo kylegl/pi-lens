@@ -57,7 +57,7 @@ export async function handleTurnEnd(deps: TurnEndDeps): Promise<void> {
 	const files = Object.keys(turnState.files);
 
 	if (files.length === 0) {
-		if (getFlag("lens-lsp")) {
+		if (getFlag("lens-lsp") && !getFlag("no-lsp")) {
 			resetLSPService();
 		}
 		resetFormatService();

@@ -9,7 +9,7 @@ pi-lens focuses on real-time inline code feedback for AI agents.
 On every `write` and `edit`, pi-lens runs a fast, language-aware pipeline (checks depend on file language, project config, and installed tools):
 
 - **Formatting + autofix**: language/tool-specific formatters and safe autofixers (Biome, Ruff, ESLint, and other toolchain-native formatters when available)
-- **Type checking**: unified LSP (`--lens-lsp`) with language fallbacks (for example `ts-lsp`, `pyright`)
+- **Type checking**: unified LSP (enabled by default) with language fallbacks (for example `ts-lsp`, `pyright`)
 - **Lint + static analysis**: active runners for the current language and config
 - **Test running**: related-file tests, with failed-first reruns for faster feedback
 - **Security checks**: secret scanning and structural security rules
@@ -57,8 +57,8 @@ pi install git:github.com/apmantza/pi-lens
 # Standard mode
 pi
 
-# Enable full multi-language LSP mode
-pi --lens-lsp
+# Optional safety: disable unified LSP and use fallbacks
+pi --no-lsp
 ```
 
 ## Key Commands
@@ -96,7 +96,11 @@ Auto-installed defaults:
 | `@ast-grep/cli` (`sg`) | AST search/replace and scans | Yes |
 | `knip` | Dead code analysis | Yes |
 
-`--lens-lsp` supports multi-language LSP workflows (including up to 31 language servers), with non-core servers depending on local installation and project configuration.
+LSP is enabled by default. pi-lens includes many language-server definitions (including up to 31+ servers), and activates them when the server is installed and the project/root detection matches the file.
+
+Optional safety switch:
+
+- `--no-lsp` disables unified LSP dispatch and falls back to language-specific checks where available (for example `ts-lsp`, `pyright`).
 
 ## Notes
 

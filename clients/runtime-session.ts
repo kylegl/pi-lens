@@ -88,7 +88,7 @@ export async function handleSessionStart(deps: SessionStartDeps): Promise<void> 
 	resetDispatchBaselines();
 	runtime.resetForSession();
 
-	if (getFlag("lens-lsp")) {
+	if (getFlag("lens-lsp") && !getFlag("no-lsp")) {
 		resetLSPService();
 		dbg("session_start: LSP service reset");
 	}
@@ -101,7 +101,9 @@ export async function handleSessionStart(deps: SessionStartDeps): Promise<void> 
 	}
 
 	const tools: string[] = [];
-	tools.push("TypeScript LSP");
+	if (getFlag("lens-lsp") && !getFlag("no-lsp")) {
+		tools.push("LSP Service");
+	}
 	if (biomeClient.isAvailable()) tools.push("Biome");
 	if (astGrepClient.isAvailable()) tools.push("ast-grep");
 	if (ruffClient.isAvailable()) tools.push("Ruff");
@@ -113,7 +115,7 @@ export async function handleSessionStart(deps: SessionStartDeps): Promise<void> 
 	log(`Active tools: ${tools.join(", ")}`);
 	dbg(`session_start tools: ${tools.join(", ")}`);
 
-	if (getFlag("lens-lsp")) {
+	if (getFlag("lens-lsp") && !getFlag("no-lsp")) {
 		const cleaned = cleanStaleTsBuildInfo(ctxCwd ?? process.cwd());
 		if (cleaned.length > 0) {
 			notify(
@@ -124,7 +126,7 @@ export async function handleSessionStart(deps: SessionStartDeps): Promise<void> 
 		}
 	}
 
-	if (getFlag("lens-lsp")) {
+	if (getFlag("lens-lsp") && !getFlag("no-lsp")) {
 		dbg("session_start: pre-installing TypeScript LSP...");
 		ensureTool("typescript-language-server")
 			.then((toolPath) => {

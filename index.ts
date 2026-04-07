@@ -185,7 +185,8 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerFlag("no-lsp", {
-		description: "Disable TypeScript LSP",
+		description:
+			"Disable unified LSP diagnostics and use language-specific fallbacks (for example ts-lsp, pyright)",
 		type: "boolean",
 		default: false,
 	});
