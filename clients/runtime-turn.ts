@@ -114,10 +114,15 @@ export async function handleTurnEnd(deps: TurnEndDeps): Promise<void> {
 			});
 			if (filtered.length > 0) {
 				let report = `🔴 New duplicates in modified code:\n`;
+				let firstPath: string | null = null;
 				for (const clone of filtered.slice(0, 5)) {
 					const displayA = toRunnerDisplayPath(cwd, clone.fileA);
 					const displayB = toRunnerDisplayPath(cwd, clone.fileB);
+					if (!firstPath) firstPath = displayA;
 					report += `  ${displayA}:${clone.startA} ↔ ${displayB}:${clone.startB} (${clone.lines} lines)\n`;
+				}
+				if (firstPath) {
+					report += `  Inspect first location with read ${firstPath}\n`;
 				}
 				blockerParts.push(report);
 			}
@@ -151,11 +156,16 @@ export async function handleTurnEnd(deps: TurnEndDeps): Promise<void> {
 			);
 			if (blockerIssues.length > 0) {
 				let report = "🔴 New unresolved imports/deps in modified code (Knip):\n";
+				let firstPath: string | null = null;
 				for (const issue of blockerIssues.slice(0, 5)) {
 					const display = issue.file
 						? toRunnerDisplayPath(cwd, issue.file)
 						: "(unknown)";
+					if (!firstPath && display !== "(unknown)") firstPath = display;
 					report += `  ${display}${issue.line ? `:${issue.line}` : ""} — ${issue.type}: ${issue.name}\n`;
+				}
+				if (firstPath) {
+					report += `  Inspect first location with read ${firstPath}\n`;
 				}
 				blockerParts.push(report);
 			}
