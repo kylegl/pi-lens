@@ -393,7 +393,12 @@ export default function (pi: ExtensionAPI) {
 			if (diagStats.topViolations.length > 0) {
 				lines.push("Top noisy rules:");
 				for (const v of diagStats.topViolations.slice(0, 5)) {
-					lines.push(`  ${v.ruleId}: ${v.count}`);
+					const samplePath =
+						v.samplePaths.length > 0
+							? path.relative(runtime.projectRoot, v.samplePaths[0]).replace(/\\/g, "/")
+							: "";
+					const pathSuffix = samplePath ? ` (e.g. ${samplePath})` : "";
+					lines.push(`  ${v.ruleId}: ${v.count}${pathSuffix}`);
 				}
 			}
 

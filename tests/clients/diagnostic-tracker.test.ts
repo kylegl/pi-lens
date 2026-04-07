@@ -27,10 +27,12 @@ describe("diagnostic-tracker", () => {
 
 			const stats = tracker.getStats();
 			expect(stats.totalShown).toBe(2);
-			expect(stats.topViolations).toContainEqual({
-				ruleId: "no-shadow",
-				count: 1,
-			});
+			expect(stats.topViolations).toContainEqual(
+				expect.objectContaining({
+					ruleId: "no-shadow",
+					count: 1,
+				}),
+			);
 		});
 
 		it("accumulates across multiple trackShown calls", () => {
@@ -99,14 +101,17 @@ describe("diagnostic-tracker", () => {
 			expect(stats.topViolations[0]).toEqual({
 				ruleId: "no-shadow",
 				count: 3,
+				samplePaths: ["/src/a.ts", "/src/b.ts", "/src/c.ts"],
 			});
 			expect(stats.topViolations[1]).toEqual({
 				ruleId: "prefer-optional-chain",
 				count: 2,
+				samplePaths: ["/src/d.ts", "/src/e.ts"],
 			});
 			expect(stats.topViolations[2]).toEqual({
 				ruleId: "no-console",
 				count: 1,
+				samplePaths: ["/src/f.ts"],
 			});
 		});
 

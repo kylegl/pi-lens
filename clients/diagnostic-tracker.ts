@@ -18,7 +18,7 @@ export interface SessionStats {
 	totalAutoFixed: number;
 	totalAgentFixed: number;
 	totalUnresolved: number;
-	topViolations: { ruleId: string; count: number }[];
+	topViolations: { ruleId: string; count: number; samplePaths: string[] }[];
 	repeatOffenders: {
 		key: string;
 		ruleId: string;
@@ -106,14 +106,23 @@ export function createDiagnosticTracker(): DiagnosticTracker {
 
 		getStats(): SessionStats {
 			const ruleCounts = new Map<string, number>();
+			const rulePaths = new Map<string, Set<string>>();
 			for (const entry of shown.values()) {
 				ruleCounts.set(entry.ruleId, (ruleCounts.get(entry.ruleId) || 0) + 1);
+				if (!rulePaths.has(entry.ruleId)) rulePaths.set(entry.ruleId, new Set());
+				rulePaths.get(entry.ruleId)?.add(entry.filePath);
 			}
 
 			const topViolations = [...ruleCounts.entries()]
 				.sort((a, b) => b[1] - a[1])
 				.slice(0, 10)
-				.map(([ruleId, count]) => ({ ruleId, count }));
+				.map(([ruleId, count]) => ({
+					ruleId,
+					count,
+					samplePaths: [...(rulePaths.get(ruleId) ?? new Set<string>())]
+						.sort((a, b) => a.localeCompare(b))
+						.slice(0, 3),
+				}));
 
 			const repeatOffenders = [...occurrenceCounts.entries()]
 				.filter(([, count]) => count >= 2)
