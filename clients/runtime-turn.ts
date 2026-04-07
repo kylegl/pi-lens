@@ -78,7 +78,7 @@ export async function handleTurnEnd(deps: TurnEndDeps): Promise<void> {
 		blockerParts.push(runtime.consumeLastCascadeOutput());
 	}
 
-	if (jscpdClient.isAvailable()) {
+	if (await jscpdClient.ensureAvailable()) {
 		const jscpdFiles = cacheManager.getFilesForJscpd(cwd);
 		if (jscpdFiles.length > 0) {
 			dbg(`turn_end: jscpd scanning ${jscpdFiles.length} file(s)`);
@@ -92,13 +92,21 @@ export async function handleTurnEnd(deps: TurnEndDeps): Promise<void> {
 				if (!fs.existsSync(resolvedA) || !fs.existsSync(resolvedB)) {
 					return false;
 				}
-				if (!jscpdFileSet.has(resolvedA)) return false;
-				const state = cacheManager.getTurnFileState(resolvedA, cwd);
-				if (!state) return false;
-				return cacheManager.isLineInModifiedRange(
-					clone.startA,
-					state.modifiedRanges,
-				);
+
+				const stateA = cacheManager.getTurnFileState(resolvedA, cwd);
+				const stateB = cacheManager.getTurnFileState(resolvedB, cwd);
+
+				const matchA =
+					jscpdFileSet.has(resolvedA) &&
+					!!stateA &&
+					cacheManager.isLineInModifiedRange(clone.startA, stateA.modifiedRanges);
+
+				const matchB =
+					jscpdFileSet.has(resolvedB) &&
+					!!stateB &&
+					cacheManager.isLineInModifiedRange(clone.startB, stateB.modifiedRanges);
+
+				return matchA || matchB;
 			});
 			if (filtered.length > 0) {
 				let report = `🔴 New duplicates in modified code:\n`;

@@ -11,6 +11,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { EXCLUDED_DIRS } from "./file-utils.js";
 import { safeSpawn } from "./safe-spawn.js";
 
 // --- Types ---
@@ -40,6 +41,45 @@ export class JscpdClient {
 
 	constructor(verbose = false) {
 		this.log = verbose ? (msg) => console.error(`[jscpd] ${msg}`) : () => {};
+	}
+
+	/**
+	 * Fast recursive source file presence check.
+	 * Avoids running jscpd when repo has no relevant source files.
+	 */
+	private hasSourceFilesRecursive(rootDir: string): boolean {
+		const stack = [rootDir];
+		let visited = 0;
+		const MAX_ENTRIES = 6000;
+
+		while (stack.length > 0 && visited < MAX_ENTRIES) {
+			const dir = stack.pop();
+			if (!dir) continue;
+
+			let entries: fs.Dirent[];
+			try {
+				entries = fs.readdirSync(dir, { withFileTypes: true });
+			} catch {
+				continue;
+			}
+
+			for (const entry of entries) {
+				visited += 1;
+				if (entry.isSymbolicLink()) continue;
+				if (entry.isDirectory()) {
+					if (EXCLUDED_DIRS.includes(entry.name)) continue;
+					stack.push(path.join(dir, entry.name));
+					continue;
+				}
+				if (!entry.isFile()) continue;
+				if (/\.(ts|tsx|js|jsx|mjs|cjs)$/.test(entry.name)) {
+					if (entry.name.endsWith(".d.ts")) continue;
+					return true;
+				}
+			}
+		}
+
+		return false;
 	}
 
 	/**
@@ -105,10 +145,7 @@ export class JscpdClient {
 				percentage: 0,
 			};
 		}
-		const entries = fs.readdirSync(cwd);
-		const hasSourceFiles = entries.some(
-			(e) => /\.(ts|tsx|js|jsx)$/.test(e) && !e.endsWith(".d.ts"),
-		);
+		const hasSourceFiles = this.hasSourceFilesRecursive(cwd);
 		if (!hasSourceFiles) {
 			return {
 				success: true,
